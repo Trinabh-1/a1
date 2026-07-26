@@ -417,6 +417,34 @@ function buildSolver(teams, deadline) {
   return { rankOrder, teams, stats, ensureDepth, makeNode, TimeBudgetExceeded };
 }
 
+// ------------------------------------------------------------
+// FIX: exact-convergence detection.
+// The old check ("did stats.rollouts stop increasing?") was a cache-hit
+// proxy, not a tree-completeness check. Because rollout() is fully
+// deterministic (always greedy-by-mean) and leaves are memoized by final
+// roster composition, most rollouts from a wide-open frontier land on
+// leaf compositions that are ALREADY cached - so `rollouts` stops
+// climbing almost immediately even when most of the tree still consists
+// of un-expanded rollout stand-ins. That falsely reported "converged" at
+// shallow depth.
+//
+// The correct criterion: walk the tree and check whether ANY node is
+// still just a rollout estimate (node.children === null, i.e. it was
+// never truly expanded to a real leaf). A node's isFrontier flag is set
+// back to false the instant it gets real children (see ensureDepth), so
+// "children === null on a non-leaf node" is exactly "this branch's value
+// is still an approximation." Convergence is only real once this count
+// hits zero everywhere in the tree - i.e. the search is fully exact, not
+// just quiet on new cache entries.
+// ------------------------------------------------------------
+function countFrontier(node) {
+  if (!node || node.kind === 'leaf') return 0;
+  if (node.children === null) return 1;
+  let count = 0;
+  for (const child of node.children) count += countFrontier(child);
+  return count;
+}
+
 // ---- worker entry point ----
 // Generalized: caller supplies the exact starting node (rosters, blacklist,
 // pendingOffer) and which team's EV to track - works for ANY decision point
@@ -427,7 +455,6 @@ self.onmessage = function(e) {
   const deadline = t0 + timeBudgetMs;
   const solver = buildSolver(teams, deadline);
   const node = solver.makeNode(rosters, new Set(blacklist), pendingOffer || null);
-  let lastRollouts = -1;
   for (let depth = 1; depth <= maxDepth; depth++) {
     const roundStart = Date.now();
     try {
@@ -452,26 +479,21 @@ self.onmessage = function(e) {
         candidateEvIfDecline: declineChild ? (declineChild.value[candId] || 0) : null,
       };
     }
+    const frontierCount = countFrontier(node);
     self.postMessage({
       type: 'progress', depth, roundMs, cumMs,
       ev: node.value[myTeamId] || 0,
       breakdown,
+      frontierCount,
       stats: Object.assign({}, solver.stats),
     });
     if (cumMs > timeBudgetMs) { self.postMessage({ type: 'done', reason: 'time' }); return; }
     if (node.kind === 'leaf' && depth >= 1) { self.postMessage({ type: 'done', reason: 'exact' }); return; } // already-complete rosters at input - nothing to deepen
-    // If a full round produced zero NEW rollouts, no approximation remains anywhere in
-    // the subtree - the search has already converged to the exact answer, so further
-    // depth increases are pure wasted iteration (this is why "depth 30" could show up
-    // on a near-complete draft: the loop kept counting even after finishing instantly).
-    if (depth > 1 && solver.stats.rollouts === lastRollouts) { self.postMessage({ type: 'done', reason: 'converged' }); return; }
-    lastRollouts = solver.stats.rollouts;
-    // If a full round produced zero NEW rollouts, no approximation remains anywhere in
-    // the subtree - the search has already converged to the exact answer, so further
-    // depth increases are pure wasted iteration (this is why "depth 30" could show up
-    // on a near-complete draft: the loop kept counting even after finishing instantly).
-    if (depth > 1 && solver.stats.rollouts === lastRollouts) { self.postMessage({ type: 'done', reason: 'converged' }); return; }
-    lastRollouts = solver.stats.rollouts;
+    // Only declare true convergence once NO node anywhere in the tree is
+    // still a rollout stand-in - i.e. every branch bottoms out at a real,
+    // exactly-evaluated leaf. This replaces the old cache-hit-based check,
+    // which could fire while most of the tree was still approximated.
+    if (frontierCount === 0) { self.postMessage({ type: 'done', reason: 'converged' }); return; }
   }
   self.postMessage({ type: 'done', reason: 'depth' });
 };
