@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Alliance Selection Walkthrough</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14181d;
+    --panel2: #1a1f26;
+    --line: #262d36;
+    --text: #d7dde3;
+    --dim: #7c8894;
+    --accent: #ff7a3d;
+    --accent2: #4fc3a1;
+    --mono: 'SF Mono', 'Courier New', monospace;
+    --sans: -apple-system, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--sans);
+    margin: 0; padding: 10px; min-height: 100vh; font-size: 14px;
+    max-width: 100vw; overflow-x: hidden;
+  }
+  h1 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--dim); font-weight: 600; margin: 4px 0 2px 0;
+  }
+  h1 span { color: var(--accent); }
+  .subtitle { font-size: 11px; color: var(--dim); margin-bottom: 14px; line-height: 1.4; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px; max-width: 100%;
+  }
+  .panel + .panel { margin-top: 12px; }
+  .panel-title {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--dim); margin-bottom: 10px; font-weight: 600;
+  }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 11px; table-layout: fixed; }
+  th { text-align: left; color: var(--dim); font-weight: 500; padding: 4px 3px; border-bottom: 1px solid var(--line); }
+  td { padding: 4px 3px; border-bottom: 1px solid #1c2127; overflow: hidden; text-overflow: ellipsis; }
+  td input {
+    width: 100%; background: transparent; border: none; color: var(--text);
+    font-family: var(--mono); font-size: 12px; padding: 4px 2px; min-width: 0;
+  }
+  td input:focus { outline: 1px solid var(--accent); border-radius: 3px; }
+  .team-table-wrap { max-height: 260px; overflow-y: auto; overflow-x: hidden; margin-bottom: 10px; -webkit-overflow-scrolling: touch; }
+  .rank-col { color: var(--dim); width: 32px; }
+  .captain-badge {
+    display: inline-block; font-size: 8px; padding: 1px 4px; border-radius: 3px;
+    background: rgba(255,122,61,0.15); color: var(--accent); margin-left: 4px; white-space: nowrap;
+  }
+  button {
+    font-family: var(--sans); font-size: 13px; font-weight: 600; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel2); color: var(--text);
+    padding: 11px 12px; cursor: pointer; transition: all 0.15s;
+    min-height: 44px; -webkit-appearance: none; touch-action: manipulation;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #1a0d05; }
+  button.primary:hover { background: #ff8f5c; color: #1a0d05; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .btn-row button { flex: 1; }
+  .hint { font-size: 11px; color: var(--dim); line-height: 1.5; margin-top: 8px; }
+  .candidates { display: flex; flex-direction: column; gap: 12px; }
+  .cand-card {
+    border: 1px solid var(--line); border-radius: 8px; padding: 14px;
+    background: var(--panel2); position: relative; overflow: hidden;
+  }
+  .cand-card.leading { border-color: var(--accent2); }
+  .cand-card.leading::before {
+    content: 'LEADING'; position: absolute; top: 10px; right: 14px;
+    font-size: 9px; letter-spacing: 0.08em; color: var(--accent2); font-weight: 700;
+  }
+  .cand-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .cand-team { font-family: var(--mono); font-size: 15px; font-weight: 700; }
+  .cand-stats-line { font-size: 11px; color: var(--dim); font-family: var(--mono); }
+  .ev-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .ev-value { font-family: var(--mono); font-size: 28px; font-weight: 700; color: var(--accent2); }
+  .ev-label { font-size: 11px; color: var(--dim); }
+  .ev-delta { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  canvas.spark { width: 100%; height: 48px; display: block; margin-bottom: 10px; }
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+    font-family: var(--mono); font-size: 10px; color: var(--dim);
+  }
+  .stat-grid div b { color: var(--text); display: block; font-size: 13px; font-weight: 600; }
+  .status-line { font-size: 11px; color: var(--dim); margin-top: 6px; font-family: var(--mono); }
+  .worker-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--dim); margin-right: 5px;
+  }
+  .worker-dot.active { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+  .final-banner {
+    background: rgba(79,195,161,0.1); border: 1px solid var(--accent2); border-radius: 8px;
+    padding: 14px; margin-top: 12px; font-size: 13px; display: none;
+  }
+  .final-banner.show { display: block; }
+  .final-banner b { color: var(--accent2); }
+</style>
+</head>
+<body>
+
+<h1>Alliance Selection <span>/ Walkthrough</span></h1>
+<div class="subtitle" id="topSubtitle">Load an event, pick which team you are, then start the walkthrough.</div>
+
+<div id="setupPanels">
+<div class="panel">
+  <div class="panel-title">Import from TBA</div>
+  <input id="tbaKey" type="password" placeholder="TBA Read API key" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;">
+  <input id="tbaEvent" type="text" value="2026cthar" placeholder="Event key" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;">
+  <button id="btnImportTBA" class="primary" style="width:100%;">Import qual rankings + power</button>
+  <div class="hint" id="tbaStatus"></div>
+  <div class="hint">Your key goes straight from this page to TBA's API — never sent anywhere else. Runs a real offense/defense least-squares regression over every qual match (not TBA's precomputed OPR): <b>mean is well-validated</b> (~0.95 correlation with true power). <b>Variance is rougher</b> — one event's matches aren't enough to pin per-team consistency down precisely; treat variance differences as suggestive, not exact. Want your key hardcoded so you don't retype it? Open this file in a text editor, find <code>HARDCODED_TBA_KEY</code> near the top of the script, paste your key between the quotes, and save.</div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Team pool</div>
+  <div class="btn-row">
+    <button id="btnRandom">Randomize</button>
+    <button id="btnAdversarial">Adversarial</button>
+  </div>
+  <div class="btn-row">
+    <button id="btnAddTeam">+ Team</button>
+    <button id="btnRemoveTeam">− Team</button>
+  </div>
+  <div class="team-table-wrap">
+    <table>
+      <thead><tr><th class="rank-col">Qual</th><th>Team</th><th>Mean</th><th>Var</th></tr></thead>
+      <tbody id="teamTableBody"></tbody>
+    </table>
+  </div>
+  <div class="hint">Only rank 1 is a fixed captain before the draft — captains 2-8 are named dynamically (highest-ranked still-unrostered team, each time a captain's first pick is accepted), so any other team could end up captain OR picked.</div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Start walkthrough</div>
+  <div class="hint" style="margin-bottom:8px;">Pick which team you are.</div>
+  <select id="wtTeamSelect" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;"></select>
+  <button id="btnStartWalkthrough" class="primary" style="width:100%;">Start walkthrough →</button>
+</div>
+</div>
+
+<div id="walkthroughPanel" class="panel" style="display:none;">
+  <div class="hint" style="margin-bottom:10px;"><a href="#" id="btnBackToSetup" style="color:var(--dim);">← back to setup</a> &nbsp;·&nbsp; <span id="wtWhoAmI"></span></div>
+  <div class="stat-grid" id="wtRosterBoard" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px;"></div>
+  <div id="wtDecisionPanel"></div>
+  <div class="hint" style="margin-top:14px;"><b>History</b></div>
+  <div id="wtHistoryLog" style="font-family:var(--mono);font-size:11px;color:var(--dim);max-height:160px;overflow-y:auto;line-height:1.6;"></div>
+  <div class="btn-row" style="margin-top:10px;">
+    <button id="btnUndo" disabled>Undo</button>
+    <button id="btnResetWalkthrough">Restart draft</button>
+  </div>
+</div>
+
+<script id="worker-src" type="javascript/worker">
+// ============================================================
+// Ported from the Node.js prototype - same algorithm, browser Worker.
+// ============================================================
+function erf(x) {
+  const sign = x < 0 ? -1 : 1; x = Math.abs(x);
+  const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+  const t = 1 / (1 + p * x);
+  const y = 1 - (((((a5*t+a4)*t)+a3)*t+a2)*t+a1) * t * Math.exp(-x*x);
+  return sign * y;
+}
+function normalCDF(x) { return 0.5 * (1 + erf(x / Math.SQRT2)); }
+function winProb(meanA, varA, meanB, varB) {
+  const sigma = Math.sqrt(varA + varB) || 1e-6;
+  return normalCDF((meanA - meanB) / sigma);
+}
+
+const BRACKET_MATCHES = [
+  { id: 'M1',  red: { t: 'seed', s: 0 }, blue: { t: 'seed', s: 7 } },
+  { id: 'M2',  red: { t: 'seed', s: 3 }, blue: { t: 'seed', s: 4 } },
+  { id: 'M3',  red: { t: 'seed', s: 1 }, blue: { t: 'seed', s: 6 } },
+  { id: 'M4',  red: { t: 'seed', s: 2 }, blue: { t: 'seed', s: 5 } },
+  { id: 'M5',  red: { t: 'loser', m: 'M1' }, blue: { t: 'loser', m: 'M2' } },
+  { id: 'M6',  red: { t: 'loser', m: 'M3' }, blue: { t: 'loser', m: 'M4' } },
+  { id: 'M7',  red: { t: 'winner', m: 'M1' }, blue: { t: 'winner', m: 'M2' } },
+  { id: 'M8',  red: { t: 'winner', m: 'M3' }, blue: { t: 'winner', m: 'M4' } },
+  { id: 'M9',  red: { t: 'loser', m: 'M7' }, blue: { t: 'winner', m: 'M6' } },
+  { id: 'M10', red: { t: 'loser', m: 'M8' }, blue: { t: 'winner', m: 'M5' } },
+  { id: 'M11', red: { t: 'winner', m: 'M7' }, blue: { t: 'winner', m: 'M8' } },
+  { id: 'M12', red: { t: 'winner', m: 'M9' }, blue: { t: 'winner', m: 'M10' } },
+  { id: 'M13', red: { t: 'loser', m: 'M11' }, blue: { t: 'winner', m: 'M12' } },
+];
+const MATCH_INDEX = {};
+BRACKET_MATCHES.forEach((m, i) => { MATCH_INDEX[m.id] = i; });
+const M11_IDX = MATCH_INDEX['M11'], M13_IDX = MATCH_INDEX['M13'], M12_IDX = MATCH_INDEX['M12'];
+const NUM_MATCHES = BRACKET_MATCHES.length;
+
+function bracketEV(meanArr, varArr) {
+  const redOf = new Int8Array(NUM_MATCHES);
+  const blueOf = new Int8Array(NUM_MATCHES);
+  const winnerOf = new Int8Array(NUM_MATCHES);
+  const value = new Array(8).fill(0);
+  function resolve(ref) {
+    if (ref.t === 'seed') return ref.s;
+    const idx = MATCH_INDEX[ref.m];
+    if (ref.t === 'winner') return winnerOf[idx];
+    return winnerOf[idx] === redOf[idx] ? blueOf[idx] : redOf[idx];
+  }
+  function recurse(pos, prob) {
+    if (prob <= 0) return;
+    if (pos === NUM_MATCHES) {
+      const loserM12 = winnerOf[M12_IDX] === redOf[M12_IDX] ? blueOf[M12_IDX] : redOf[M12_IDX];
+      const loserM13 = winnerOf[M13_IDX] === redOf[M13_IDX] ? blueOf[M13_IDX] : redOf[M13_IDX];
+      value[loserM12] += prob * 7;
+      value[loserM13] += prob * 13;
+      const m11w = winnerOf[M11_IDX], m13w = winnerOf[M13_IDX];
+      const p = winProb(meanArr[m11w], varArr[m11w], meanArr[m13w], varArr[m13w]);
+      const pSweepM11 = p * p, p3M11 = 2 * p * p * (1 - p);
+      const pSweepM13 = (1 - p) * (1 - p), p3M13 = 2 * (1 - p) * (1 - p) * p;
+      value[m11w] += prob * ((pSweepM11 + p3M11) * 30 + pSweepM13 * 20 + p3M13 * 25);
+      value[m13w] += prob * ((pSweepM13 + p3M13) * 30 + pSweepM11 * 20 + p3M11 * 25);
+      return;
+    }
+    const match = BRACKET_MATCHES[pos];
+    const red = resolve(match.red), blue = resolve(match.blue);
+    redOf[pos] = red; blueOf[pos] = blue;
+    const pRed = winProb(meanArr[red], varArr[red], meanArr[blue], varArr[blue]);
+    winnerOf[pos] = red;  recurse(pos + 1, prob * pRed);
+    winnerOf[pos] = blue; recurse(pos + 1, prob * (1 - pRed));
+  }
+  recurse(0, 1.0);
+  return value;
+}
+
+const TEAMS_PER_ALLIANCE = 3;
+const OFFER_BRANCH = 3;
+
+function buildSolver(teams) {
+  teams = teams.slice();
+  const byId = new Map(teams.map(t => [t.id, t]));
+  const rankOrder = teams.slice().sort((a, b) => a.qualRank - b.qualRank); // captain order = qual rank, NOT mean power
+  const trueLeafMemo = new Map();
+
+  function rosterKey(r) { return r[0] + ':' + r.slice(1).slice().sort().join(','); }
+  function fullSignature(rosters) { return rosters.map(rosterKey).join('|'); }
+  function isComplete(rosters) { return rosters.length === 8 && rosters.every(r => r.length === TEAMS_PER_ALLIANCE); }
+
+  function getActiveAllianceIdx(rosters) {
+    const k = rosters.length;
+    if (k < 8) return k - 1;
+    if (rosters[7].length < 2) return 7;
+    for (let i = 7; i >= 0; i--) if (rosters[i].length < TEAMS_PER_ALLIANCE) return i;
+    return -1;
+  }
+  function getAvailable(rosters, blacklist) {
+    const rostered = new Set(rosters.flat());
+    const out = [];
+    for (const t of teams) { if (rostered.has(t.id) || blacklist.has(t.id)) continue; out.push(t); }
+    out.sort((a, b) => b.mean - a.mean);
+    return out;
+  }
+  function nextCaptainCandidate(rosters) {
+    const rostered = new Set(rosters.flat());
+    for (const t of rankOrder) if (!rostered.has(t.id)) return t;
+    return null;
+  }
+  function applyAccept(rosters, allianceIdx, teamId) {
+    const wasFirstPick = rosters[allianceIdx].length === 1;
+    const newRosters = rosters.map((r, i) => i === allianceIdx ? [...r, teamId] : r);
+    if (wasFirstPick && newRosters.length < 8) {
+      const nextCap = nextCaptainCandidate(newRosters);
+      if (nextCap) newRosters.push([nextCap.id]);
+    }
+    return newRosters;
+  }
+
+  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, boundsComputed: 0, pruned: 0, inherited: 0 };
+
+  function evaluateLeaf(rosters) {
+    const key = fullSignature(rosters);
+    const cached = trueLeafMemo.get(key);
+    if (cached) { stats.leafMemoHits++; return cached; }
+    stats.leafEvals++;
+    const meanArr = new Array(8).fill(0), varArr = new Array(8).fill(0);
+    for (let i = 0; i < rosters.length; i++) {
+      let m = 0, v = 0;
+      for (const tid of rosters[i]) { const t = byId.get(tid); m += t.mean; v += t.variance; }
+      meanArr[i] = m; varArr[i] = v;
+    }
+    const allianceVals = bracketEV(meanArr, varArr);
+    const vec = {};
+    for (let i = 0; i < rosters.length; i++) {
+      const allianceNumber = i + 1, capFirstPts = 17 - allianceNumber, secondPts = allianceNumber;
+      const roster = rosters[i];
+      if (roster[0] != null) vec[roster[0]] = allianceVals[i] + capFirstPts;
+      if (roster[1] != null) vec[roster[1]] = allianceVals[i] + capFirstPts;
+      if (roster[2] != null) vec[roster[2]] = allianceVals[i] + secondPts;
+    }
+    for (const t of teams) if (!(t.id in vec)) vec[t.id] = 0;
+    trueLeafMemo.set(key, vec);
+    return vec;
+  }
+
+  function rollout(rosters, blacklist) {
+    let r = rosters, guard = 0;
+    while (!isComplete(r)) {
+      if (++guard > 200) throw new Error('rollout did not terminate');
+      const capIdx = getActiveAllianceIdx(r);
+      const avail = getAvailable(r, blacklist);
+      if (avail.length === 0) break;
+      r = applyAccept(r, capIdx, avail[0].id);
+    }
+    stats.rollouts++;
+    return evaluateLeaf(r);
+  }
+
+  function computeBound(rosters, blacklist, allianceIdx, candidate) {
+    const currentRoster = rosters[allianceIdx];
+    let ownMean = 0, ownVar = 0;
+    for (const tid of currentRoster) { const t = byId.get(tid); ownMean += t.mean; ownVar += t.variance; }
+    ownMean += candidate.mean; ownVar += candidate.variance;
+    const willBeComplete = currentRoster.length + 1 === TEAMS_PER_ALLIANCE;
+    if (!willBeComplete) {
+      const avail = getAvailable(rosters, blacklist);
+      for (const t of avail) { if (t.id !== candidate.id) { ownMean += t.mean; ownVar += t.variance; break; } }
+    }
+    const pWins = [];
+    for (let i = 0; i < 8; i++) {
+      if (i === allianceIdx) continue;
+      let m = 0, v = 0;
+      if (i < rosters.length) { for (const tid of rosters[i]) { const t = byId.get(tid); m += t.mean; v += t.variance; } }
+      pWins.push(normalCDF((ownMean - m) / (Math.sqrt(ownVar + v) || 1e-6)));
+    }
+    pWins.sort((a, b) => b - a);
+    const p1 = pWins[0], p2 = pWins[1];
+    const bracket = 20 + 10 * p1 * p1 * (1 - p1) + 10 * p1 * p1 * (3 - 2 * p1);
+    const pReachFinals = p1 * p2;
+    const playoffBound = pReachFinals * bracket + (1 - pReachFinals) * 13;
+    const allianceNumber = allianceIdx + 1;
+    const selectionPts = willBeComplete ? allianceNumber : (17 - allianceNumber);
+    return playoffBound + selectionPts;
+  }
+
+  function makeNode(rosters, blacklist, pendingOffer) {
+    return {
+      rosters, blacklist, pendingOffer,
+      kind: pendingOffer ? 'acceptDecline' : (isComplete(rosters) ? 'leaf' : 'offer'),
+      children: null, value: null, isFrontier: false,
+    };
+  }
+
+  function ensureDepth(node, depthBudget) {
+    if (node.kind === 'leaf') {
+      if (node.value === null) node.value = evaluateLeaf(node.rosters);
+      node.isFrontier = false;
+      return;
+    }
+    if (depthBudget === 0) {
+      if (node.value !== null) return;
+      let startRosters = node.rosters;
+      if (node.kind === 'acceptDecline') startRosters = applyAccept(node.rosters, node.pendingOffer.allianceIdx, node.pendingOffer.teamId);
+      node.value = rollout(startRosters, node.blacklist);
+      node.isFrontier = true;
+      return;
+    }
+    const wasFrontier = node.isFrontier;
+    if (node.children === null) {
+      stats.realNodes++;
+      if (node.kind === 'offer') {
+        const capIdx = getActiveAllianceIdx(node.rosters);
+        const capTeamId = node.rosters[capIdx][0];
+        node.capTeamId = capTeamId;
+        const candidates = getAvailable(node.rosters, node.blacklist).slice(0, OFFER_BRANCH);
+        if (candidates.length === 0) {
+          node.kind = 'leaf'; node.value = evaluateLeaf(node.rosters); node.isFrontier = false; return;
+        }
+        const isSecondPick = node.rosters[capIdx].length === 2;
+        const boundIsUseful = isSecondPick || capIdx === 6 || capIdx === 7;
+        node.children = [];
+        let bestValSoFar = -Infinity;
+        for (let i = 0; i < candidates.length; i++) {
+          const cand = candidates[i];
+          if (i > 0 && boundIsUseful) {
+            stats.boundsComputed++;
+            const bound = computeBound(node.rosters, node.blacklist, capIdx, cand);
+            if (bound <= bestValSoFar) { stats.pruned++; node.children.push(null); continue; }
+          }
+          const child = makeNode(node.rosters, node.blacklist, { allianceIdx: capIdx, teamId: cand.id });
+          if (i === 0 && wasFrontier) { child.value = node.value; child.isFrontier = true; stats.inherited++; }
+          ensureDepth(child, depthBudget - 1);
+          node.children.push(child);
+          const v = child.value[capTeamId] || 0;
+          if (v > bestValSoFar) bestValSoFar = v;
+        }
+      } else {
+        const { allianceIdx, teamId } = node.pendingOffer;
+        node.allianceIdx = allianceIdx; node.teamId = teamId;
+        const acceptRosters = applyAccept(node.rosters, allianceIdx, teamId);
+        const acceptChild = makeNode(acceptRosters, node.blacklist, null);
+        if (wasFrontier) { acceptChild.value = node.value; acceptChild.isFrontier = true; stats.inherited++; }
+        ensureDepth(acceptChild, depthBudget - 1);
+        const captainSlotsRemaining = 8 - node.rosters.length;
+        let declineChild = null;
+        if (captainSlotsRemaining > 0) {
+          const declineBlacklist = new Set(node.blacklist); declineBlacklist.add(teamId);
+          declineChild = makeNode(node.rosters, declineBlacklist, null);
+          ensureDepth(declineChild, depthBudget - 1);
+        }
+        node.children = [acceptChild, declineChild];
+      }
+      node.isFrontier = false;
+    } else {
+      if (node.kind === 'offer') {
+        for (const child of node.children) { if (child === null) continue; ensureDepth(child, depthBudget - 1); }
+      } else {
+        for (const child of node.children) if (child) ensureDepth(child, depthBudget - 1);
+      }
+    }
+    if (node.kind === 'offer') {
+      let bestVal = -Infinity, bestVec = null;
+      for (const child of node.children) {
+        if (child === null) continue;
+        const v = child.value[node.capTeamId] || 0;
+        if (v > bestVal) { bestVal = v; bestVec = child.value; }
+      }
+      node.value = bestVec;
+    } else {
+      const [acceptChild, declineChild] = node.children;
+      if (!declineChild) { node.value = acceptChild.value; }
+      else {
+        const teamId = node.teamId;
+        const acceptVal = acceptChild.value, declineVal = declineChild.value;
+        if ((declineVal[teamId] || 0) > (acceptVal[teamId] || 0)) {
+          const out = {};
+          for (const k in declineVal) out[k] = 0.9 * declineVal[k];
+          for (const k in acceptVal) out[k] = (out[k] || 0) + 0.1 * acceptVal[k];
+          node.value = out;
+        } else { node.value = acceptVal; }
+      }
+    }
+  }
+
+  return { rankOrder, teams, stats, ensureDepth, makeNode };
+}
+
+// ---- worker entry point ----
+// Generalized: caller supplies the exact starting node (rosters, blacklist,
+// pendingOffer) and which team's EV to track - works for ANY decision point
+// in the draft, not just captain 1's opening pick.
+self.onmessage = function(e) {
+  const { teams, rosters, blacklist, pendingOffer, myTeamId, maxDepth, timeBudgetMs } = e.data;
+  const solver = buildSolver(teams);
+  const node = solver.makeNode(rosters, new Set(blacklist), pendingOffer || null);
+  const t0 = Date.now();
+  let lastRollouts = -1;
+  for (let depth = 1; depth <= maxDepth; depth++) {
+    const roundStart = Date.now();
+    solver.ensureDepth(node, depth);
+    const roundMs = Date.now() - roundStart;
+    const cumMs = Date.now() - t0;
+    self.postMessage({
+      type: 'progress', depth, roundMs, cumMs,
+      ev: node.value[myTeamId] || 0,
+      stats: Object.assign({}, solver.stats),
+    });
+    if (cumMs > timeBudgetMs) { self.postMessage({ type: 'done', reason: 'time' }); return; }
+    if (node.kind === 'leaf' && depth >= 1) { self.postMessage({ type: 'done', reason: 'exact' }); return; } // already-complete rosters at input - nothing to deepen
+    // If a full round produced zero NEW rollouts, no approximation remains anywhere in
+    // the subtree - the search has already converged to the exact answer, so further
+    // depth increases are pure wasted iteration (this is why "depth 30" could show up
+    // on a near-complete draft: the loop kept counting even after finishing instantly).
+    if (depth > 1 && solver.stats.rollouts === lastRollouts) { self.postMessage({ type: 'done', reason: 'converged' }); return; }
+    lastRollouts = solver.stats.rollouts;
+  }
+  self.postMessage({ type: 'done', reason: 'depth' });
+};
+</script>
+
+<script>
+// >>> EDIT HERE if you want your TBA key baked into this file <<<
+// Paste your TBA Read API key between the quotes below, then save the
+// file - it'll auto-fill the key field every time you open it, so you
+// don't have to paste it in each time. Leave it blank ('') to keep
+// typing it in manually (safer if you're sharing this file with anyone).
+const HARDCODED_TBA_KEY = '62kVw3Bc0VEov5ENh5X4tfngA2CDtJxIIijVBtvSasADOSs0RAWCJYikr4sVTSjh';
+// ============================================================
+// Main thread: team management, worker orchestration, UI
+// ============================================================
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function randNormal(rng, mu, sigma) {
+  const u1 = Math.max(rng(), 1e-9), u2 = rng();
+  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  return mu + sigma * z;
+}
+
+let teams = [];
+let seedCounter = 1;
+
+// Qual rank correlates loosely with mean (stronger teams tend to rank better,
+// since ranking points are partly match-outcome-driven) but with enough
+// noise that reversals are common - a higher qual-ranked team can and does
+// have a lower LSS mean than a lower-ranked team, same as in real events.
+function assignQualRanks(list, jitter) {
+  const byMean = list.slice().sort((a, b) => b.mean - a.mean);
+  const withNoise = byMean.map((t, i) => ({ t, key: i + (Math.random() - 0.5) * jitter }));
+  withNoise.sort((a, b) => a.key - b.key);
+  withNoise.forEach((entry, i) => { entry.t.qualRank = i + 1; });
+}
+
+function randomizeTeams(n) {
+  const rng = mulberry32(Date.now() % 100000);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push({ id: 'T' + (i + 1), mean: +Math.max(5, randNormal(rng, 30, 9)).toFixed(2), variance: +Math.max(1, 4 + rng() * 20).toFixed(2) });
+  }
+  assignQualRanks(out, 8); // +/- ~4 position jitter
+  return out;
+}
+
+function adversarialTeams(n) {
+  // Means clustered tightly (small, meaningful gaps rather than wide spread);
+  // variances assigned independently and wildly, uncorrelated with mean rank -
+  // exactly the regime where win-probability is variance-sensitive rather
+  // than mean-dominated, so greedy-by-mean picking is least likely to be safe.
+  const rng = mulberry32(Date.now() % 100000);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const mean = +(40 - i * 0.15 + (rng() - 0.5) * 0.6).toFixed(2); // tight, nearly-linear gaps
+    const variance = +(1 + rng() * 60).toFixed(2); // wild, independent of rank
+    out.push({ id: 'T' + (i + 1), mean, variance });
+  }
+  assignQualRanks(out, 14); // heavier jitter: qual rank and mean order diverge more
+  return out;
+}
+
+function renderTeamTable() {
+  const sorted = teams.slice().sort((a, b) => a.qualRank - b.qualRank); // table shown in DRAFT order (qual rank), not mean order
+  const body = document.getElementById('teamTableBody');
+  body.innerHTML = '';
+  sorted.forEach((t) => {
+    const tr = document.createElement('tr');
+    const isCaptain1 = t.qualRank === 1;
+    tr.innerHTML = `
+      <td class="rank-col">${t.qualRank}</td>
+      <td>${t.id}${isCaptain1 ? '<span class="captain-badge">CAPTAIN 1</span>' : ''}</td>
+      <td><input type="number" step="0.1" value="${t.mean}" data-id="${t.id}" data-field="mean"></td>
+      <td><input type="number" step="0.1" value="${t.variance}" data-id="${t.id}" data-field="variance"></td>
+    `;
+    body.appendChild(tr);
+  });
+  body.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const team = teams.find(t => t.id === inp.dataset.id);
+      team[inp.dataset.field] = parseFloat(inp.value) || 0;
+    });
+  });
+  const cap1 = teams.find(t => t.qualRank === 1);
+}
+
+document.getElementById('btnRandom').onclick = () => { teams = randomizeTeams(Math.max(teams.length, 32)); renderTeamTable(); };
+document.getElementById('btnAdversarial').onclick = () => { teams = adversarialTeams(Math.max(teams.length, 32)); renderTeamTable(); };
+document.getElementById('btnAddTeam').onclick = () => { teams.push({ id: 'T' + (teams.length + 1), mean: 25, variance: 10, qualRank: teams.length + 1 }); renderTeamTable(); };
+document.getElementById('btnRemoveTeam').onclick = () => { if (teams.length > 9) teams.pop(); renderTeamTable(); };
+
+// ============================================================
+// LSS offense/defense regression + residual-based variance.
+// Validated against synthetic ground truth: power recovery correlates
+// ~0.95 with true values at realistic match counts; variance recovery
+// correlates only ~0.11-0.15 at a single event's typical match count
+// (needs ~300+ matches to reach ~0.74) - squared residuals are an
+// inherently noisy estimator, unlike raw scores for the mean. Shrinkage
+// stabilizes wild individual outliers but does NOT fix this accuracy
+// limit - flagged honestly in the UI, not hidden.
+// ============================================================
+function solveLinearSystem(A, b, n) {
+  const M = A.map((row, i) => { const r = new Float64Array(n + 1); r.set(row); r[n] = b[i]; return r; });
+  for (let col = 0; col < n; col++) {
+    let maxRow = col, maxVal = Math.abs(M[col][col]);
+    for (let r = col + 1; r < n; r++) { if (Math.abs(M[r][col]) > maxVal) { maxVal = Math.abs(M[r][col]); maxRow = r; } }
+    if (maxRow !== col) { const tmp = M[col]; M[col] = M[maxRow]; M[maxRow] = tmp; }
+    if (Math.abs(M[col][col]) < 1e-9) continue;
+    for (let r = 0; r < n; r++) {
+      if (r === col) continue;
+      const factor = M[r][col] / M[col][col];
+      if (factor === 0) continue;
+      for (let c = col; c <= n; c++) M[r][c] -= factor * M[col][c];
+    }
+  }
+  const x = new Float64Array(n);
+  for (let i = 0; i < n; i++) x[i] = Math.abs(M[i][i]) > 1e-9 ? M[i][n] / M[i][i] : 0;
+  return x;
+}
+
+function buildAndSolveLSS(matches, teamKeys) {
+  const teamIndex = new Map(); teamKeys.forEach((tk, i) => teamIndex.set(tk, i));
+  const N = teamKeys.length;
+  const numUnknowns = 2 * N;
+  const ATA = Array.from({ length: numUnknowns }, () => new Float64Array(numUnknowns));
+  const ATb = new Float64Array(numUnknowns);
+  const rows = [];
+  function addRow(entries, bVal, weight, trackForResiduals) {
+    weight = weight || 1;
+    for (let a = 0; a < entries.length; a++) {
+      ATb[entries[a].idx] += weight * entries[a].val * bVal;
+      for (let b = 0; b < entries.length; b++) ATA[entries[a].idx][entries[b].idx] += weight * entries[a].val * entries[b].val;
+    }
+    if (trackForResiduals) rows.push({ entries, b: bVal });
+  }
+  for (const m of matches) {
+    const redTeams = m.red.filter(tk => teamIndex.has(tk));
+    const blueTeams = m.blue.filter(tk => teamIndex.has(tk));
+    if (m.redScore == null || m.blueScore == null) continue;
+    const redEntries = [];
+    for (const tk of redTeams) redEntries.push({ idx: teamIndex.get(tk), val: 1 });
+    for (const tk of blueTeams) redEntries.push({ idx: N + teamIndex.get(tk), val: -1 });
+    addRow(redEntries, m.redScore, 1, true);
+    const blueEntries = [];
+    for (const tk of blueTeams) blueEntries.push({ idx: teamIndex.get(tk), val: 1 });
+    for (const tk of redTeams) blueEntries.push({ idx: N + teamIndex.get(tk), val: -1 });
+    addRow(blueEntries, m.blueScore, 1, true);
+  }
+  const constraintEntries = [];
+  for (let i = 0; i < N; i++) constraintEntries.push({ idx: N + i, val: 1 });
+  addRow(constraintEntries, 0, 1000, false); // avg-defense=0 gauge constraint
+  const x = solveLinearSystem(ATA, ATb, numUnknowns);
+  return { x, rows, N };
+}
+
+function computeResidualVariance(rows, x, N, shrinkK) {
+  const B = Array.from({ length: N }, () => new Float64Array(N));
+  const Bb = new Float64Array(N);
+  const matchesPlayed = new Array(N).fill(0);
+  for (const row of rows) {
+    let predicted = 0;
+    for (const e of row.entries) predicted += e.val * x[e.idx];
+    const sq = (row.b - predicted) ** 2;
+    const teamIdxs = row.entries.map(e => e.idx < N ? e.idx : e.idx - N);
+    for (const i of teamIdxs) {
+      Bb[i] += sq; matchesPlayed[i]++;
+      for (const j of teamIdxs) B[i][j] += 1;
+    }
+  }
+  const vRaw = Array.from(solveLinearSystem(B, Bb, N)).map(v => Math.max(1, v));
+  const popMean = vRaw.reduce((a, b) => a + b, 0) / N;
+  return vRaw.map((v, i) => {
+    const w = matchesPlayed[i] / (matchesPlayed[i] + shrinkK);
+    return w * v + (1 - w) * popMean;
+  });
+}
+
+async function importFromTBA() {
+  const apiKey = document.getElementById('tbaKey').value.trim();
+  const eventKey = document.getElementById('tbaEvent').value.trim();
+  const statusEl = document.getElementById('tbaStatus');
+  if (!apiKey) { statusEl.textContent = 'Enter your TBA Read API key first.'; return; }
+  if (!eventKey) { statusEl.textContent = 'Enter an event key (e.g. 2026cthar).'; return; }
+  statusEl.textContent = 'Fetching from TBA…';
+  try {
+    const headers = { 'X-TBA-Auth-Key': apiKey };
+    const [rankingsRes, matchesRes] = await Promise.all([
+      fetch(`https://www.thebluealliance.com/api/v3/event/${eventKey}/rankings`, { headers }),
+      fetch(`https://www.thebluealliance.com/api/v3/event/${eventKey}/matches`, { headers }),
+    ]);
+    if (!rankingsRes.ok) throw new Error('rankings request failed (HTTP ' + rankingsRes.status + ') - check API key and event key');
+    if (!matchesRes.ok) throw new Error('matches request failed (HTTP ' + matchesRes.status + ')');
+    const rankings = await rankingsRes.json();
+    const rawMatches = await matchesRes.json();
+    if (!rankings || !rankings.rankings || rankings.rankings.length === 0) {
+      throw new Error('No ranking data returned - event may not have posted qual results yet, or the event key is wrong.');
+    }
+    const qualMatches = rawMatches.filter(m => m.comp_level === 'qm' && m.alliances && m.alliances.red && m.alliances.blue);
+    if (qualMatches.length === 0) throw new Error('No completed qualification matches found for this event yet.');
+
+    const teamKeys = rankings.rankings.map(r => r.team_key);
+    const matches = qualMatches.map(m => ({
+      red: m.alliances.red.team_keys, blue: m.alliances.blue.team_keys,
+      redScore: m.alliances.red.score, blueScore: m.alliances.blue.score,
+    })).filter(m => m.redScore != null && m.blueScore != null && m.redScore >= 0 && m.blueScore >= 0);
+
+    statusEl.textContent = `Solving LSS regression over ${matches.length} qual matches…`;
+    const { x, rows, N } = buildAndSolveLSS(matches, teamKeys);
+    const power = teamKeys.map((_, i) => x[i] + x[N + i]);
+    const minPower = Math.min(...power);
+    const normPower = power.map(p => p - minPower); // worst team = 0
+    const variance = computeResidualVariance(rows, x, N, 8);
+
+    teams = rankings.rankings.map((r, i) => ({
+      id: r.team_key.replace('frc', ''),
+      qualRank: r.rank,
+      mean: +normPower[i].toFixed(2),
+      variance: +variance[i].toFixed(2),
+    }));
+    renderTeamTable();
+    statusEl.textContent = `Imported ${teams.length} teams from ${matches.length} qual matches at ${eventKey}. Mean is well-validated (own offense/defense LSS, matches TBA's OPR methodology). Variance is a rough, shrinkage-stabilized estimate — a single event's matches aren't enough data to pin per-team variance down precisely (validated against synthetic ground truth: needs ~10x more matches than one event has for reliable per-team differentiation). Treat variance differences as suggestive, not precise.`;
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message + ' — possible causes: wrong key/event, event has no posted results yet, or TBA blocked the cross-origin request (CORS) from this page.';
+  }
+}
+document.getElementById('btnImportTBA').onclick = importFromTBA;
+if (HARDCODED_TBA_KEY) document.getElementById('tbaKey').value = HARDCODED_TBA_KEY;
+
+teams = randomizeTeams(32);
+renderTeamTable();
+
+function populateTeamSelect() {
+  const sel = document.getElementById('wtTeamSelect');
+  const sorted = teams.slice().sort((a, b) => a.qualRank - b.qualRank);
+  sel.innerHTML = sorted.map(t => `<option value="${t.id}">${t.id} (qual rank ${t.qualRank}, mean ${t.mean})</option>`).join('');
+}
+populateTeamSelect();
+const _origRenderTeamTable = renderTeamTable;
+renderTeamTable = function () { _origRenderTeamTable(); populateTeamSelect(); };
+
+let workerBlobUrl = null;
+function getWorkerBlobUrl() {
+  if (workerBlobUrl) return workerBlobUrl;
+  const src = document.getElementById('worker-src').textContent;
+  const blob = new Blob([src], { type: 'application/javascript' });
+  workerBlobUrl = URL.createObjectURL(blob);
+  return workerBlobUrl;
+}
+
+// ============================================================
+// WALKTHROUGH MODE
+// Steps through the actual draft one decision at a time. For decisions
+// that aren't the user's team, asks what happened. For the user's own
+// decisions, runs the solver (same worker machinery, generalized to an
+// arbitrary starting state) and recommends by EV instead of asking.
+// ============================================================
+const TEAMS_PER_ALLIANCE_WT = 3;
+
+function wtIsComplete(rosters) { return rosters.length === 8 && rosters.every(r => r.length === TEAMS_PER_ALLIANCE_WT); }
+function wtGetActiveAllianceIdx(rosters) {
+  const k = rosters.length;
+  if (k < 8) return k - 1;
+  if (rosters[7].length < 2) return 7;
+  for (let i = 7; i >= 0; i--) if (rosters[i].length < TEAMS_PER_ALLIANCE_WT) return i;
+  return -1;
+}
+function wtGetAvailable(rosters, blacklist) {
+  const rostered = new Set(rosters.flat());
+  const out = [];
+  for (const t of teams) { if (rostered.has(t.id) || blacklist.has(t.id)) continue; out.push(t); }
+  out.sort((a, b) => b.mean - a.mean);
+  return out;
+}
+function wtNextCaptainCandidate(rosters, rankOrder) {
+  const rostered = new Set(rosters.flat());
+  for (const t of rankOrder) if (!rostered.has(t.id)) return t;
+  return null;
+}
+function wtApplyAccept(rosters, allianceIdx, teamId, rankOrder) {
+  const wasFirstPick = rosters[allianceIdx].length === 1;
+  const newRosters = rosters.map((r, i) => i === allianceIdx ? [...r, teamId] : r);
+  if (wasFirstPick && newRosters.length < 8) {
+    const nextCap = wtNextCaptainCandidate(newRosters, rankOrder);
+    if (nextCap) newRosters.push([nextCap.id]);
+  }
+  return newRosters;
+}
+
+let wt = null; // { rosters, blacklist(Set), pendingOffer, myTeamId, rankOrder, history, activeWorkers, snapshots }
+
+function initWalkthroughFromData(teamsData, myTeamId) {
+  teams = teamsData;
+  const rankOrder = teams.slice().sort((a, b) => a.qualRank - b.qualRank);
+  wt = {
+    rosters: [[rankOrder[0].id]], blacklist: new Set(), pendingOffer: null,
+    myTeamId, rankOrder, history: [], activeWorkers: [], snapshots: [],
+  };
+  document.getElementById('wtWhoAmI').textContent = `You are ${myTeamId}`;
+  renderWalkthrough();
+}
+
+document.getElementById('btnResetWalkthrough').onclick = () => {
+  if (!wt) return;
+  if (wt.activeWorkers) wt.activeWorkers.forEach(w => w.terminate());
+  initWalkthroughFromData(teams, wt.myTeamId);
+};
+
+document.getElementById('btnUndo').onclick = () => {
+  if (!wt || wt.snapshots.length === 0) return;
+  if (wt.activeWorkers) wt.activeWorkers.forEach(w => w.terminate());
+  const snap = wt.snapshots.pop();
+  wt.rosters = snap.rosters; wt.blacklist = snap.blacklist; wt.pendingOffer = snap.pendingOffer;
+  wt.history.length = snap.historyLen;
+  renderWalkthrough();
+};
+
+function renderRosterBoard() {
+  const board = document.getElementById('wtRosterBoard');
+  board.innerHTML = '';
+  for (let i = 0; i < wt.rosters.length; i++) {
+    const r = wt.rosters[i];
+    const div = document.createElement('div');
+    div.innerHTML = `<b>#${i + 1}</b>${r.join(', ') || '—'}`;
+    board.appendChild(div);
+  }
+}
+function renderHistory() {
+  document.getElementById('wtHistoryLog').innerHTML = wt.history.map(h => `<div>${h}</div>`).join('');
+  document.getElementById('btnUndo').disabled = wt.snapshots.length === 0;
+}
+
+// Central commit point for every state-changing action - snapshots BEFORE
+// the change so Undo can restore exactly (rosters/blacklist/pendingOffer
+// plus how much history existed), logs the action, applies the new state,
+// and re-renders. Every handler below goes through this - no ad hoc state
+// mutation anywhere else, so Undo can never miss a step.
+function wtCommit(logMsg, newRosters, newBlacklist, newPendingOffer) {
+  wt.snapshots.push({ rosters: wt.rosters, blacklist: wt.blacklist, pendingOffer: wt.pendingOffer, historyLen: wt.history.length });
+  wt.history.push(logMsg);
+  wt.rosters = newRosters; wt.blacklist = newBlacklist; wt.pendingOffer = newPendingOffer || null;
+  renderWalkthrough();
+}
+
+// Runs the solver on a specific child state, tracking EV for wt.myTeamId,
+// calling onUpdate(evValue, depth, done, reason) as progress comes in.
+function wtRunSolver(rosters, blacklist, pendingOffer, onUpdate) {
+  const url = getWorkerBlobUrl();
+  const worker = new Worker(url);
+  wt.activeWorkers.push(worker);
+  worker.onmessage = (e) => {
+    const msg = e.data;
+    if (msg.type === 'progress') onUpdate(msg.ev, msg.depth, false, null);
+    else if (msg.type === 'done') onUpdate(null, null, true, msg.reason);
+  };
+  worker.postMessage({
+    teams, rosters, blacklist: Array.from(blacklist), pendingOffer,
+    myTeamId: wt.myTeamId, maxDepth: 30, timeBudgetMs: 60000,
+  });
+  return worker;
+}
+
+function stopWtWorkers() { wt.activeWorkers.forEach(w => w.terminate()); wt.activeWorkers = []; }
+
+function renderWalkthrough() {
+  renderRosterBoard();
+  renderHistory();
+  stopWtWorkers();
+  const panel = document.getElementById('wtDecisionPanel');
+
+  if (wtIsComplete(wt.rosters)) {
+    panel.innerHTML = `<div class="final-banner show"><b>Draft complete.</b> Final alliances shown above.</div>`;
+    return;
+  }
+
+  if (wt.pendingOffer) {
+    const { allianceIdx, teamId } = wt.pendingOffer;
+    const isMine = teamId === wt.myTeamId;
+    const captainSlotsRemaining = 8 - wt.rosters.length;
+    const declineLegal = captainSlotsRemaining > 0; // model's own assumption - user can still override below
+
+    if (!isMine) {
+      panel.innerHTML = `
+        <div class="cand-stats-line" style="margin-bottom:10px;">Does <b>${teamId}</b> accept the offer from alliance #${allianceIdx + 1}?</div>
+        ${declineLegal ? '' : '<div class="hint" style="color:var(--accent);">The model treats decline as dominated here (no captain slots left) - but real drafts can deviate, so it is still recorded if you say it happened.</div>'}
+        <div class="btn-row">
+          <button id="wtAccept" class="primary">Accept</button>
+          <button id="wtDecline">Decline${declineLegal ? '' : ' anyway'}</button>
+        </div>`;
+      document.getElementById('wtAccept').onclick = () => {
+        wtCommit(`${teamId} accepted alliance #${allianceIdx + 1}'s offer.`, wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null);
+      };
+      document.getElementById('wtDecline').onclick = () => {
+        const bl = new Set(wt.blacklist); bl.add(teamId);
+        wtCommit(`${teamId} declined alliance #${allianceIdx + 1}'s offer${declineLegal ? '' : ' (recorded despite model treating it as dominated)'}.`, wt.rosters, bl, null);
+      };
+    } else {
+      panel.innerHTML = `<div class="cand-stats-line" style="margin-bottom:10px;">It's your call: accept alliance #${allianceIdx + 1}'s offer, or decline?</div>${declineLegal ? '' : '<div class="hint" style="color:var(--accent);">Model treats decline as dominated here (no captain slots left) - EV shown anyway if you want to see it.</div>'}<div id="wtRecommendWrap"></div>`;
+      const wrap = document.getElementById('wtRecommendWrap');
+      const acceptState = { ev: null, depth: 0, reason: null };
+      const declineState = { ev: null, depth: 0, reason: null };
+      function paint() {
+        const declineWins = declineState.ev != null && acceptState.ev != null && declineState.ev > acceptState.ev;
+        wrap.innerHTML = `
+          <div class="candidates">
+            <div class="cand-card ${!declineWins ? 'leading' : ''}">
+              <div class="ev-row"><span class="ev-value">${acceptState.ev != null ? acceptState.ev.toFixed(3) : '…'}</span><span class="ev-label">Accept ${acceptState.reason ? '(' + acceptState.reason + ')' : '(depth ' + acceptState.depth + ')'}</span></div>
+              <button class="primary" id="wtPickAccept">Choose Accept</button>
+            </div>
+            <div class="cand-card ${declineWins ? 'leading' : ''}">
+              <div class="ev-row"><span class="ev-value">${declineState.ev != null ? declineState.ev.toFixed(3) : '…'}</span><span class="ev-label">Decline ${declineState.reason ? '(' + declineState.reason + ')' : '(depth ' + declineState.depth + ')'}</span></div>
+              <button id="wtPickDecline">Choose Decline</button>
+            </div>
+          </div>`;
+        document.getElementById('wtPickAccept').onclick = () => {
+          wtCommit(`You (${teamId}) accepted alliance #${allianceIdx + 1}'s offer (EV ${acceptState.ev != null ? acceptState.ev.toFixed(3) : '?'}).`, wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null);
+        };
+        document.getElementById('wtPickDecline').onclick = () => {
+          const bl = new Set(wt.blacklist); bl.add(teamId);
+          wtCommit(`You (${teamId}) declined alliance #${allianceIdx + 1}'s offer (EV ${declineState.ev != null ? declineState.ev.toFixed(3) : '?'}${declineLegal ? '' : ', despite model treating it as dominated'}).`, wt.rosters, bl, null);
+        };
+      }
+      paint();
+      wtRunSolver(wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null, (ev, depth, done, reason) => {
+        if (!done) { acceptState.ev = ev; acceptState.depth = depth; } else acceptState.reason = reason;
+        paint();
+      });
+      // Always compute decline's real EV too, even when the model's internal
+      // pruning would treat it as dominated - that pruning only affects FUTURE
+      // hypothetical picks deep in the recursion, not this top-level query.
+      const bl = new Set(wt.blacklist); bl.add(teamId);
+      wtRunSolver(wt.rosters, bl, null, (ev, depth, done, reason) => {
+        if (!done) { declineState.ev = ev; declineState.depth = depth; } else declineState.reason = reason;
+        paint();
+      });
+    }
+    return;
+  }
+
+  // offer decision
+  const capIdx = wtGetActiveAllianceIdx(wt.rosters);
+  const capTeamId = wt.rosters[capIdx][0];
+  const isMine = capTeamId === wt.myTeamId;
+  const allAvailable = wtGetAvailable(wt.rosters, wt.blacklist);
+  const candidates = allAvailable.slice(0, isMine ? 4 : 3); // only YOUR decisions get a 4th option - everyone else still sees 3
+  if (candidates.length === 0) { panel.innerHTML = `<div class="cand-stats-line">No eligible teams remain to offer - draft ends here for this alliance.</div>`; return; }
+
+  function manualPickerHtml(idPrefix) {
+    const options = allAvailable.map(t => `<option value="${t.id}">${t.id} (mean ${t.mean})</option>`).join('');
+    return `
+      <div class="hint" style="margin-top:12px;margin-bottom:6px;">Real captains can pick anyone, not just the model's top options — use this if that's what actually happened:</div>
+      <select id="${idPrefix}Select" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;">${options}</select>
+      <button id="${idPrefix}Confirm" style="width:100%;">Record this pick</button>`;
+  }
+
+  if (!isMine) {
+    panel.innerHTML = `
+      <div class="cand-stats-line" style="margin-bottom:10px;">Who does alliance #${capIdx + 1} (captain ${capTeamId}) choose?</div>
+      <div class="btn-row" id="wtOfferChoices"></div>
+      ${manualPickerHtml('wtManualOffer')}`;
+    const row = document.getElementById('wtOfferChoices');
+    candidates.forEach(c => {
+      const btn = document.createElement('button');
+      btn.textContent = `${c.id} (mean ${c.mean})`;
+      btn.onclick = () => {
+        wtCommit(`Alliance #${capIdx + 1} (${capTeamId}) offered ${c.id}.`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: c.id });
+      };
+      row.appendChild(btn);
+    });
+    document.getElementById('wtManualOfferConfirm').onclick = () => {
+      const picked = document.getElementById('wtManualOfferSelect').value;
+      wtCommit(`Alliance #${capIdx + 1} (${capTeamId}) offered ${picked} (manual entry).`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: picked });
+    };
+  } else {
+    panel.innerHTML = `<div class="cand-stats-line" style="margin-bottom:10px;">Your call as alliance #${capIdx + 1} captain: who do you offer?</div><div id="wtOfferRecommendWrap" class="candidates"></div>${manualPickerHtml('wtManualOfferMine')}`;
+    const wrap = document.getElementById('wtOfferRecommendWrap');
+    const candStates = candidates.map(c => ({ id: c.id, mean: c.mean, ev: null, depth: 0, reason: null }));
+    function paint() {
+      const bestEv = Math.max(...candStates.map(cs => cs.ev != null ? cs.ev : -Infinity));
+      wrap.innerHTML = candStates.map((cs, i) => `
+        <div class="cand-card ${cs.ev != null && cs.ev === bestEv ? 'leading' : ''}">
+          <div class="cand-header"><span class="cand-team">${cs.id}</span><span class="cand-stats-line">mean ${cs.mean}</span></div>
+          <div class="ev-row"><span class="ev-value">${cs.ev != null ? cs.ev.toFixed(3) : '…'}</span><span class="ev-label">${cs.reason ? cs.reason : 'depth ' + cs.depth}</span></div>
+          <button class="primary" id="wtPickOffer${i}">Offer to ${cs.id}</button>
+        </div>`).join('');
+      candStates.forEach((cs, i) => {
+        document.getElementById('wtPickOffer' + i).onclick = () => {
+          wtCommit(`You (alliance #${capIdx + 1}, ${capTeamId}) offered ${cs.id} (EV ${cs.ev != null ? cs.ev.toFixed(3) : '?'}).`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: cs.id });
+        };
+      });
+    }
+    paint();
+    document.getElementById('wtManualOfferMineConfirm').onclick = () => {
+      const picked = document.getElementById('wtManualOfferMineSelect').value;
+      wtCommit(`You (alliance #${capIdx + 1}, ${capTeamId}) offered ${picked} (manual override - no EV computed for this choice).`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: picked });
+    };
+    candidates.forEach((c, i) => {
+      wtRunSolver(wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: c.id }, (ev, depth, done, reason) => {
+        if (!done) { candStates[i].ev = ev; candStates[i].depth = depth; } else candStates[i].reason = reason;
+        paint();
+      });
+    });
+  }
+}
+
+document.getElementById('btnStartWalkthrough').onclick = () => {
+  const myTeamId = document.getElementById('wtTeamSelect').value;
+  document.getElementById('setupPanels').style.display = 'none';
+  document.getElementById('walkthroughPanel').style.display = 'block';
+  document.getElementById('topSubtitle').textContent = 'Step through the real draft — recommended by EV whenever it\u2019s your call.';
+  initWalkthroughFromData(teams, myTeamId);
+};
+
+document.getElementById('btnBackToSetup').onclick = (e) => {
+  e.preventDefault();
+  if (wt && wt.activeWorkers) wt.activeWorkers.forEach(w => w.terminate());
+  wt = null;
+  document.getElementById('walkthroughPanel').style.display = 'none';
+  document.getElementById('setupPanels').style.display = 'block';
+  document.getElementById('topSubtitle').textContent = 'Load an event, pick which team you are, then start the walkthrough.';
+};
+</script>
+</body>
+</html>
