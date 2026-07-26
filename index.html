@@ -234,7 +234,8 @@ function bracketEV(meanArr, varArr) {
 const TEAMS_PER_ALLIANCE = 3;
 const OFFER_BRANCH = 3;
 
-function buildSolver(teams) {
+function buildSolver(teams, deadline) {
+  const MEMO_CAP = 150000; // cap entries to bound memory - iOS/mobile tabs have tight per-tab memory limits
   teams = teams.slice();
   const byId = new Map(teams.map(t => [t.id, t]));
   const rankOrder = teams.slice().sort((a, b) => a.qualRank - b.qualRank); // captain order = qual rank, NOT mean power
@@ -273,7 +274,7 @@ function buildSolver(teams) {
     return newRosters;
   }
 
-  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, boundsComputed: 0, pruned: 0, inherited: 0 };
+  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, inherited: 0 };
 
   function evaluateLeaf(rosters) {
     const key = fullSignature(rosters);
@@ -296,6 +297,7 @@ function buildSolver(teams) {
       if (roster[2] != null) vec[roster[2]] = allianceVals[i] + secondPts;
     }
     for (const t of teams) if (!(t.id in vec)) vec[t.id] = 0;
+    if (trueLeafMemo.size > MEMO_CAP) trueLeafMemo.clear(); // bound memory - unbounded growth was crashing the tab on long runs
     trueLeafMemo.set(key, vec);
     return vec;
   }
@@ -313,33 +315,6 @@ function buildSolver(teams) {
     return evaluateLeaf(r);
   }
 
-  function computeBound(rosters, blacklist, allianceIdx, candidate) {
-    const currentRoster = rosters[allianceIdx];
-    let ownMean = 0, ownVar = 0;
-    for (const tid of currentRoster) { const t = byId.get(tid); ownMean += t.mean; ownVar += t.variance; }
-    ownMean += candidate.mean; ownVar += candidate.variance;
-    const willBeComplete = currentRoster.length + 1 === TEAMS_PER_ALLIANCE;
-    if (!willBeComplete) {
-      const avail = getAvailable(rosters, blacklist);
-      for (const t of avail) { if (t.id !== candidate.id) { ownMean += t.mean; ownVar += t.variance; break; } }
-    }
-    const pWins = [];
-    for (let i = 0; i < 8; i++) {
-      if (i === allianceIdx) continue;
-      let m = 0, v = 0;
-      if (i < rosters.length) { for (const tid of rosters[i]) { const t = byId.get(tid); m += t.mean; v += t.variance; } }
-      pWins.push(normalCDF((ownMean - m) / (Math.sqrt(ownVar + v) || 1e-6)));
-    }
-    pWins.sort((a, b) => b - a);
-    const p1 = pWins[0], p2 = pWins[1];
-    const bracket = 20 + 10 * p1 * p1 * (1 - p1) + 10 * p1 * p1 * (3 - 2 * p1);
-    const pReachFinals = p1 * p2;
-    const playoffBound = pReachFinals * bracket + (1 - pReachFinals) * 13;
-    const allianceNumber = allianceIdx + 1;
-    const selectionPts = willBeComplete ? allianceNumber : (17 - allianceNumber);
-    return playoffBound + selectionPts;
-  }
-
   function makeNode(rosters, blacklist, pendingOffer) {
     return {
       rosters, blacklist, pendingOffer,
@@ -348,7 +323,14 @@ function buildSolver(teams) {
     };
   }
 
+  let checkCounter = 0;
+  class TimeBudgetExceeded extends Error {}
+  function checkTime() {
+    if (deadline != null && (++checkCounter & 0xFFF) === 0 && Date.now() > deadline) throw new TimeBudgetExceeded();
+  }
+
   function ensureDepth(node, depthBudget) {
+    checkTime();
     if (node.kind === 'leaf') {
       if (node.value === null) node.value = evaluateLeaf(node.rosters);
       node.isFrontier = false;
@@ -373,17 +355,10 @@ function buildSolver(teams) {
         if (candidates.length === 0) {
           node.kind = 'leaf'; node.value = evaluateLeaf(node.rosters); node.isFrontier = false; return;
         }
-        const isSecondPick = node.rosters[capIdx].length === 2;
-        const boundIsUseful = isSecondPick || capIdx === 6 || capIdx === 7;
         node.children = [];
         let bestValSoFar = -Infinity;
         for (let i = 0; i < candidates.length; i++) {
           const cand = candidates[i];
-          if (i > 0 && boundIsUseful) {
-            stats.boundsComputed++;
-            const bound = computeBound(node.rosters, node.blacklist, capIdx, cand);
-            if (bound <= bestValSoFar) { stats.pruned++; node.children.push(null); continue; }
-          }
           const child = makeNode(node.rosters, node.blacklist, { allianceIdx: capIdx, teamId: cand.id });
           if (i === 0 && wasFrontier) { child.value = node.value; child.isFrontier = true; stats.inherited++; }
           ensureDepth(child, depthBudget - 1);
@@ -439,7 +414,7 @@ function buildSolver(teams) {
     }
   }
 
-  return { rankOrder, teams, stats, ensureDepth, makeNode };
+  return { rankOrder, teams, stats, ensureDepth, makeNode, TimeBudgetExceeded };
 }
 
 // ---- worker entry point ----
@@ -448,22 +423,49 @@ function buildSolver(teams) {
 // in the draft, not just captain 1's opening pick.
 self.onmessage = function(e) {
   const { teams, rosters, blacklist, pendingOffer, myTeamId, maxDepth, timeBudgetMs } = e.data;
-  const solver = buildSolver(teams);
-  const node = solver.makeNode(rosters, new Set(blacklist), pendingOffer || null);
   const t0 = Date.now();
+  const deadline = t0 + timeBudgetMs;
+  const solver = buildSolver(teams, deadline);
+  const node = solver.makeNode(rosters, new Set(blacklist), pendingOffer || null);
   let lastRollouts = -1;
   for (let depth = 1; depth <= maxDepth; depth++) {
     const roundStart = Date.now();
-    solver.ensureDepth(node, depth);
+    try {
+      solver.ensureDepth(node, depth);
+    } catch (err) {
+      if (err instanceof solver.TimeBudgetExceeded) { self.postMessage({ type: 'done', reason: 'time' }); return; }
+      throw err;
+    }
     const roundMs = Date.now() - roundStart;
     const cumMs = Date.now() - t0;
+    // Breakdown: accept-child and decline-child values, for both the
+    // requester's own team and (if this is an offer being evaluated) the
+    // candidate's own team - already computed internally, just exposing it.
+    let breakdown = null;
+    if (node.kind === 'acceptDecline' && node.children) {
+      const [acceptChild, declineChild] = node.children;
+      const candId = node.pendingOffer.teamId;
+      breakdown = {
+        myEvIfAccept: acceptChild ? (acceptChild.value[myTeamId] || 0) : null,
+        myEvIfDecline: declineChild ? (declineChild.value[myTeamId] || 0) : null,
+        candidateEvIfAccept: acceptChild ? (acceptChild.value[candId] || 0) : null,
+        candidateEvIfDecline: declineChild ? (declineChild.value[candId] || 0) : null,
+      };
+    }
     self.postMessage({
       type: 'progress', depth, roundMs, cumMs,
       ev: node.value[myTeamId] || 0,
+      breakdown,
       stats: Object.assign({}, solver.stats),
     });
     if (cumMs > timeBudgetMs) { self.postMessage({ type: 'done', reason: 'time' }); return; }
     if (node.kind === 'leaf' && depth >= 1) { self.postMessage({ type: 'done', reason: 'exact' }); return; } // already-complete rosters at input - nothing to deepen
+    // If a full round produced zero NEW rollouts, no approximation remains anywhere in
+    // the subtree - the search has already converged to the exact answer, so further
+    // depth increases are pure wasted iteration (this is why "depth 30" could show up
+    // on a near-complete draft: the loop kept counting even after finishing instantly).
+    if (depth > 1 && solver.stats.rollouts === lastRollouts) { self.postMessage({ type: 'done', reason: 'converged' }); return; }
+    lastRollouts = solver.stats.rollouts;
     // If a full round produced zero NEW rollouts, no approximation remains anywhere in
     // the subtree - the search has already converged to the exact answer, so further
     // depth increases are pure wasted iteration (this is why "depth 30" could show up
@@ -821,15 +823,15 @@ function wtCommit(logMsg, newRosters, newBlacklist, newPendingOffer) {
 }
 
 // Runs the solver on a specific child state, tracking EV for wt.myTeamId,
-// calling onUpdate(evValue, depth, done, reason) as progress comes in.
+// calling onUpdate(evValue, depth, done, reason, breakdown) as progress comes in.
 function wtRunSolver(rosters, blacklist, pendingOffer, onUpdate) {
   const url = getWorkerBlobUrl();
   const worker = new Worker(url);
   wt.activeWorkers.push(worker);
   worker.onmessage = (e) => {
     const msg = e.data;
-    if (msg.type === 'progress') onUpdate(msg.ev, msg.depth, false, null);
-    else if (msg.type === 'done') onUpdate(null, null, true, msg.reason);
+    if (msg.type === 'progress') onUpdate(msg.ev, msg.depth, false, null, msg.breakdown);
+    else if (msg.type === 'done') onUpdate(null, null, true, msg.reason, null);
   };
   worker.postMessage({
     teams, rosters, blacklist: Array.from(blacklist), pendingOffer,
@@ -959,6 +961,12 @@ function renderWalkthrough() {
         <div class="cand-card ${cs.ev != null && cs.ev === bestEv ? 'leading' : ''}">
           <div class="cand-header"><span class="cand-team">${cs.id}</span><span class="cand-stats-line">mean ${cs.mean}</span></div>
           <div class="ev-row"><span class="ev-value">${cs.ev != null ? cs.ev.toFixed(3) : '…'}</span><span class="ev-label">${cs.reason ? cs.reason : 'depth ' + cs.depth}</span></div>
+          <div class="cand-stats-line" style="margin-bottom:10px;">
+            if they accept, your EV: ${cs.myEvIfAccept != null ? cs.myEvIfAccept.toFixed(3) : '…'} &nbsp;·&nbsp;
+            if they decline, your EV: ${cs.myEvIfDecline != null ? cs.myEvIfDecline.toFixed(3) : '…'}<br>
+            ${cs.id}'s own EV if they accept: ${cs.candEvIfAccept != null ? cs.candEvIfAccept.toFixed(3) : '…'} &nbsp;·&nbsp;
+            if they decline: ${cs.candEvIfDecline != null ? cs.candEvIfDecline.toFixed(3) : '…'}
+          </div>
           <button class="primary" id="wtPickOffer${i}">Offer to ${cs.id}</button>
         </div>`).join('');
       candStates.forEach((cs, i) => {
@@ -973,8 +981,14 @@ function renderWalkthrough() {
       wtCommit(`You (alliance #${capIdx + 1}, ${capTeamId}) offered ${picked} (manual override - no EV computed for this choice).`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: picked });
     };
     candidates.forEach((c, i) => {
-      wtRunSolver(wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: c.id }, (ev, depth, done, reason) => {
-        if (!done) { candStates[i].ev = ev; candStates[i].depth = depth; } else candStates[i].reason = reason;
+      wtRunSolver(wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: c.id }, (ev, depth, done, reason, breakdown) => {
+        if (!done) {
+          candStates[i].ev = ev; candStates[i].depth = depth;
+          if (breakdown) {
+            candStates[i].myEvIfAccept = breakdown.myEvIfAccept; candStates[i].myEvIfDecline = breakdown.myEvIfDecline;
+            candStates[i].candEvIfAccept = breakdown.candidateEvIfAccept; candStates[i].candEvIfDecline = breakdown.candidateEvIfDecline;
+          }
+        } else candStates[i].reason = reason;
         paint();
       });
     });
