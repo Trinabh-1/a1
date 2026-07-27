@@ -234,8 +234,8 @@ function bracketEV(meanArr, varArr) {
 const TEAMS_PER_ALLIANCE = 3;
 const OFFER_BRANCH = 3;
 
-function buildSolver(teams, deadline) {
-  const MEMO_CAP = 150000; // cap entries to bound memory - iOS/mobile tabs have tight per-tab memory limits
+function buildSolver(teams) {
+  const MEMO_CAP = 150000; // real stop condition now - memory is a hard resource limit, not something to silently clear past
   teams = teams.slice();
   const byId = new Map(teams.map(t => [t.id, t]));
   const rankOrder = teams.slice().sort((a, b) => a.qualRank - b.qualRank); // captain order = qual rank, NOT mean power
@@ -274,7 +274,7 @@ function buildSolver(teams, deadline) {
     return newRosters;
   }
 
-  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, inherited: 0 };
+  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, inherited: 0, memoCapHit: false };
 
   function evaluateLeaf(rosters) {
     const key = fullSignature(rosters);
@@ -297,8 +297,8 @@ function buildSolver(teams, deadline) {
       if (roster[2] != null) vec[roster[2]] = allianceVals[i] + secondPts;
     }
     for (const t of teams) if (!(t.id in vec)) vec[t.id] = 0;
-    if (trueLeafMemo.size > MEMO_CAP) trueLeafMemo.clear(); // bound memory - unbounded growth was crashing the tab on long runs
-    trueLeafMemo.set(key, vec);
+    if (trueLeafMemo.size > MEMO_CAP) stats.memoCapHit = true; // real resource limit hit - stop, don't silently clear and keep growing anyway
+    else trueLeafMemo.set(key, vec);
     return vec;
   }
 
@@ -324,13 +324,13 @@ function buildSolver(teams, deadline) {
   }
 
   let checkCounter = 0;
-  class TimeBudgetExceeded extends Error {}
-  function checkTime() {
-    if (deadline != null && (++checkCounter & 0xFFF) === 0 && Date.now() > deadline) throw new TimeBudgetExceeded();
+  class MemoCapExceeded extends Error {}
+  function checkMemoCap() {
+    if (stats.memoCapHit && (++checkCounter & 0xFFF) === 0) throw new MemoCapExceeded();
   }
 
   function ensureDepth(node, depthBudget) {
-    checkTime();
+    checkMemoCap();
     if (node.kind === 'leaf') {
       if (node.value === null) node.value = evaluateLeaf(node.rosters);
       node.isFrontier = false;
@@ -414,29 +414,12 @@ function buildSolver(teams, deadline) {
     }
   }
 
-  return { rankOrder, teams, stats, ensureDepth, makeNode, TimeBudgetExceeded };
+  return { rankOrder, teams, stats, ensureDepth, makeNode, MemoCapExceeded };
 }
 
-// ------------------------------------------------------------
-// FIX: exact-convergence detection.
-// The old check ("did stats.rollouts stop increasing?") was a cache-hit
-// proxy, not a tree-completeness check. Because rollout() is fully
-// deterministic (always greedy-by-mean) and leaves are memoized by final
-// roster composition, most rollouts from a wide-open frontier land on
-// leaf compositions that are ALREADY cached - so `rollouts` stops
-// climbing almost immediately even when most of the tree still consists
-// of un-expanded rollout stand-ins. That falsely reported "converged" at
-// shallow depth.
-//
-// The correct criterion: walk the tree and check whether ANY node is
-// still just a rollout estimate (node.children === null, i.e. it was
-// never truly expanded to a real leaf). A node's isFrontier flag is set
-// back to false the instant it gets real children (see ensureDepth), so
-// "children === null on a non-leaf node" is exactly "this branch's value
-// is still an approximation." Convergence is only real once this count
-// hits zero everywhere in the tree - i.e. the search is fully exact, not
-// just quiet on new cache entries.
-// ------------------------------------------------------------
+// A node still needs real expansion if it's a non-leaf with no children yet
+// (either untouched, or resolved only via a rollout stand-in) - counts how
+// many such nodes remain anywhere in the tree, recursively.
 function countFrontier(node) {
   if (!node || node.kind === 'leaf') return 0;
   if (node.children === null) return 1;
@@ -450,17 +433,16 @@ function countFrontier(node) {
 // pendingOffer) and which team's EV to track - works for ANY decision point
 // in the draft, not just captain 1's opening pick.
 self.onmessage = function(e) {
-  const { teams, rosters, blacklist, pendingOffer, myTeamId, maxDepth, timeBudgetMs } = e.data;
-  const t0 = Date.now();
-  const deadline = t0 + timeBudgetMs;
-  const solver = buildSolver(teams, deadline);
+  const { teams, rosters, blacklist, pendingOffer, myTeamId } = e.data;
+  const solver = buildSolver(teams);
   const node = solver.makeNode(rosters, new Set(blacklist), pendingOffer || null);
-  for (let depth = 1; depth <= maxDepth; depth++) {
+  const t0 = Date.now();
+  for (let depth = 1; ; depth++) {
     const roundStart = Date.now();
     try {
       solver.ensureDepth(node, depth);
     } catch (err) {
-      if (err instanceof solver.TimeBudgetExceeded) { self.postMessage({ type: 'done', reason: 'time' }); return; }
+      if (err instanceof solver.MemoCapExceeded) { self.postMessage({ type: 'done', reason: 'memory' }); return; }
       throw err;
     }
     const roundMs = Date.now() - roundStart;
@@ -487,15 +469,18 @@ self.onmessage = function(e) {
       frontierCount,
       stats: Object.assign({}, solver.stats),
     });
-    if (cumMs > timeBudgetMs) { self.postMessage({ type: 'done', reason: 'time' }); return; }
+    if (solver.stats.memoCapHit) { self.postMessage({ type: 'done', reason: 'memory' }); return; }
     if (node.kind === 'leaf' && depth >= 1) { self.postMessage({ type: 'done', reason: 'exact' }); return; } // already-complete rosters at input - nothing to deepen
-    // Only declare true convergence once NO node anywhere in the tree is
-    // still a rollout stand-in - i.e. every branch bottoms out at a real,
-    // exactly-evaluated leaf. This replaces the old cache-hit-based check,
-    // which could fire while most of the tree was still approximated.
+    // Only declare true convergence once NO node anywhere in the tree is still
+    // a rollout stand-in (children === null on a non-leaf node) - i.e. every
+    // branch bottoms out at a real, exactly-evaluated leaf. A naive "did the
+    // rollout counter stop climbing" check is a cache-hit proxy, not a real
+    // completeness check: since rollout() is deterministic and leaves are
+    // memoized by final roster, most rollouts from a wide-open frontier land
+    // on already-cached leaves almost immediately, so that counter goes flat
+    // long before the tree is actually done - falsely reporting convergence.
     if (frontierCount === 0) { self.postMessage({ type: 'done', reason: 'converged' }); return; }
   }
-  self.postMessage({ type: 'done', reason: 'depth' });
 };
 </script>
 
@@ -735,7 +720,8 @@ renderTeamTable();
 function populateTeamSelect() {
   const sel = document.getElementById('wtTeamSelect');
   const sorted = teams.slice().sort((a, b) => a.qualRank - b.qualRank);
-  sel.innerHTML = sorted.map(t => `<option value="${t.id}">${t.id} (qual rank ${t.qualRank}, mean ${t.mean})</option>`).join('');
+  const anyOption = `<option value="__ANY__">— View every team's perspective —</option>`;
+  sel.innerHTML = anyOption + sorted.map(t => `<option value="${t.id}">${t.id} (qual rank ${t.qualRank}, mean ${t.mean})</option>`).join('');
 }
 populateTeamSelect();
 const _origRenderTeamTable = renderTeamTable;
@@ -798,7 +784,7 @@ function initWalkthroughFromData(teamsData, myTeamId) {
     rosters: [[rankOrder[0].id]], blacklist: new Set(), pendingOffer: null,
     myTeamId, rankOrder, history: [], activeWorkers: [], snapshots: [],
   };
-  document.getElementById('wtWhoAmI').textContent = `You are ${myTeamId}`;
+  document.getElementById('wtWhoAmI').textContent = myTeamId === '__ANY__' ? 'Viewing every team\u2019s perspective' : `You are ${myTeamId}`;
   renderWalkthrough();
 }
 
@@ -844,9 +830,9 @@ function wtCommit(logMsg, newRosters, newBlacklist, newPendingOffer) {
   renderWalkthrough();
 }
 
-// Runs the solver on a specific child state, tracking EV for wt.myTeamId,
+// Runs the solver on a specific child state, tracking EV for `forTeamId`,
 // calling onUpdate(evValue, depth, done, reason, breakdown) as progress comes in.
-function wtRunSolver(rosters, blacklist, pendingOffer, onUpdate) {
+function wtRunSolver(rosters, blacklist, pendingOffer, forTeamId, onUpdate) {
   const url = getWorkerBlobUrl();
   const worker = new Worker(url);
   wt.activeWorkers.push(worker);
@@ -857,7 +843,7 @@ function wtRunSolver(rosters, blacklist, pendingOffer, onUpdate) {
   };
   worker.postMessage({
     teams, rosters, blacklist: Array.from(blacklist), pendingOffer,
-    myTeamId: wt.myTeamId, maxDepth: 30, timeBudgetMs: 60000,
+    myTeamId: forTeamId,
   });
   return worker;
 }
@@ -877,7 +863,7 @@ function renderWalkthrough() {
 
   if (wt.pendingOffer) {
     const { allianceIdx, teamId } = wt.pendingOffer;
-    const isMine = teamId === wt.myTeamId;
+    const isMine = wt.myTeamId === '__ANY__' || teamId === wt.myTeamId;
     const captainSlotsRemaining = 8 - wt.rosters.length;
     const declineLegal = captainSlotsRemaining > 0; // model's own assumption - user can still override below
 
@@ -897,33 +883,44 @@ function renderWalkthrough() {
         wtCommit(`${teamId} declined alliance #${allianceIdx + 1}'s offer${declineLegal ? '' : ' (recorded despite model treating it as dominated)'}.`, wt.rosters, bl, null);
       };
     } else {
-      panel.innerHTML = `<div class="cand-stats-line" style="margin-bottom:10px;">It's your call: accept alliance #${allianceIdx + 1}'s offer, or decline?</div>${declineLegal ? '' : '<div class="hint" style="color:var(--accent);">Model treats decline as dominated here (no captain slots left) - EV shown anyway if you want to see it.</div>'}<div id="wtRecommendWrap"></div>`;
+      const headerText = wt.myTeamId === '__ANY__'
+        ? `Viewing as <b>${teamId}</b>: accept alliance #${allianceIdx + 1}'s offer, or decline?`
+        : `It's your call: accept alliance #${allianceIdx + 1}'s offer, or decline?`;
+      panel.innerHTML = `<div class="cand-stats-line" style="margin-bottom:10px;">${headerText}</div>${declineLegal ? '' : '<div class="hint" style="color:var(--accent);">Model treats decline as dominated here (no captain slots left) - EV shown anyway if you want to see it.</div>'}<div id="wtRecommendWrap"></div>`;
       const wrap = document.getElementById('wtRecommendWrap');
-      const acceptState = { ev: null, depth: 0, reason: null };
-      const declineState = { ev: null, depth: 0, reason: null };
+      const acceptState = { ev: null, depth: 0, reason: null, worker: null };
+      const declineState = { ev: null, depth: 0, reason: null, worker: null };
       function paint() {
         const declineWins = declineState.ev != null && acceptState.ev != null && declineState.ev > acceptState.ev;
         wrap.innerHTML = `
           <div class="candidates">
             <div class="cand-card ${!declineWins ? 'leading' : ''}">
               <div class="ev-row"><span class="ev-value">${acceptState.ev != null ? acceptState.ev.toFixed(3) : '…'}</span><span class="ev-label">Accept ${acceptState.reason ? '(' + acceptState.reason + ')' : '(depth ' + acceptState.depth + ')'}</span></div>
-              <button class="primary" id="wtPickAccept">Choose Accept</button>
+              <div class="btn-row">
+                <button class="primary" id="wtPickAccept">Choose Accept</button>
+                <button id="wtStopAccept" ${acceptState.reason ? 'disabled' : ''}>Stop</button>
+              </div>
             </div>
             <div class="cand-card ${declineWins ? 'leading' : ''}">
               <div class="ev-row"><span class="ev-value">${declineState.ev != null ? declineState.ev.toFixed(3) : '…'}</span><span class="ev-label">Decline ${declineState.reason ? '(' + declineState.reason + ')' : '(depth ' + declineState.depth + ')'}</span></div>
-              <button id="wtPickDecline">Choose Decline</button>
+              <div class="btn-row">
+                <button id="wtPickDecline">Choose Decline</button>
+                <button id="wtStopDecline" ${declineState.reason ? 'disabled' : ''}>Stop</button>
+              </div>
             </div>
           </div>`;
         document.getElementById('wtPickAccept').onclick = () => {
-          wtCommit(`You (${teamId}) accepted alliance #${allianceIdx + 1}'s offer (EV ${acceptState.ev != null ? acceptState.ev.toFixed(3) : '?'}).`, wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null);
+          wtCommit(`${teamId} accepted alliance #${allianceIdx + 1}'s offer (EV ${acceptState.ev != null ? acceptState.ev.toFixed(3) : '?'}).`, wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null);
         };
         document.getElementById('wtPickDecline').onclick = () => {
           const bl = new Set(wt.blacklist); bl.add(teamId);
-          wtCommit(`You (${teamId}) declined alliance #${allianceIdx + 1}'s offer (EV ${declineState.ev != null ? declineState.ev.toFixed(3) : '?'}${declineLegal ? '' : ', despite model treating it as dominated'}).`, wt.rosters, bl, null);
+          wtCommit(`${teamId} declined alliance #${allianceIdx + 1}'s offer (EV ${declineState.ev != null ? declineState.ev.toFixed(3) : '?'}${declineLegal ? '' : ', despite model treating it as dominated'}).`, wt.rosters, bl, null);
         };
+        if (!acceptState.reason) document.getElementById('wtStopAccept').onclick = () => { if (acceptState.worker) acceptState.worker.terminate(); acceptState.reason = 'stopped'; paint(); };
+        if (!declineState.reason) document.getElementById('wtStopDecline').onclick = () => { if (declineState.worker) declineState.worker.terminate(); declineState.reason = 'stopped'; paint(); };
       }
       paint();
-      wtRunSolver(wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null, (ev, depth, done, reason) => {
+      acceptState.worker = wtRunSolver(wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null, teamId, (ev, depth, done, reason) => {
         if (!done) { acceptState.ev = ev; acceptState.depth = depth; } else acceptState.reason = reason;
         paint();
       });
@@ -931,7 +928,7 @@ function renderWalkthrough() {
       // pruning would treat it as dominated - that pruning only affects FUTURE
       // hypothetical picks deep in the recursion, not this top-level query.
       const bl = new Set(wt.blacklist); bl.add(teamId);
-      wtRunSolver(wt.rosters, bl, null, (ev, depth, done, reason) => {
+      declineState.worker = wtRunSolver(wt.rosters, bl, null, teamId, (ev, depth, done, reason) => {
         if (!done) { declineState.ev = ev; declineState.depth = depth; } else declineState.reason = reason;
         paint();
       });
@@ -942,7 +939,7 @@ function renderWalkthrough() {
   // offer decision
   const capIdx = wtGetActiveAllianceIdx(wt.rosters);
   const capTeamId = wt.rosters[capIdx][0];
-  const isMine = capTeamId === wt.myTeamId;
+  const isMine = wt.myTeamId === '__ANY__' || capTeamId === wt.myTeamId;
   const allAvailable = wtGetAvailable(wt.rosters, wt.blacklist);
   const candidates = allAvailable.slice(0, isMine ? 4 : 3); // only YOUR decisions get a 4th option - everyone else still sees 3
   if (candidates.length === 0) { panel.innerHTML = `<div class="cand-stats-line">No eligible teams remain to offer - draft ends here for this alliance.</div>`; return; }
@@ -974,9 +971,12 @@ function renderWalkthrough() {
       wtCommit(`Alliance #${capIdx + 1} (${capTeamId}) offered ${picked} (manual entry).`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: picked });
     };
   } else {
-    panel.innerHTML = `<div class="cand-stats-line" style="margin-bottom:10px;">Your call as alliance #${capIdx + 1} captain: who do you offer?</div><div id="wtOfferRecommendWrap" class="candidates"></div>${manualPickerHtml('wtManualOfferMine')}`;
+    const headerText = wt.myTeamId === '__ANY__'
+      ? `Viewing as alliance #${capIdx + 1} captain (${capTeamId}): who do they offer?`
+      : `Your call as alliance #${capIdx + 1} captain: who do you offer?`;
+    panel.innerHTML = `<div class="cand-stats-line" style="margin-bottom:10px;">${headerText}</div><div id="wtOfferRecommendWrap" class="candidates"></div>${manualPickerHtml('wtManualOfferMine')}`;
     const wrap = document.getElementById('wtOfferRecommendWrap');
-    const candStates = candidates.map(c => ({ id: c.id, mean: c.mean, ev: null, depth: 0, reason: null }));
+    const candStates = candidates.map(c => ({ id: c.id, mean: c.mean, ev: null, depth: 0, reason: null, worker: null }));
     function paint() {
       const bestEv = Math.max(...candStates.map(cs => cs.ev != null ? cs.ev : -Infinity));
       wrap.innerHTML = candStates.map((cs, i) => `
@@ -989,12 +989,19 @@ function renderWalkthrough() {
             ${cs.id}'s own EV if they accept: ${cs.candEvIfAccept != null ? cs.candEvIfAccept.toFixed(3) : '…'} &nbsp;·&nbsp;
             if they decline: ${cs.candEvIfDecline != null ? cs.candEvIfDecline.toFixed(3) : '…'}
           </div>
-          <button class="primary" id="wtPickOffer${i}">Offer to ${cs.id}</button>
+          <div class="btn-row">
+            <button class="primary" id="wtPickOffer${i}">Offer to ${cs.id}</button>
+            <button id="wtStopOffer${i}" ${cs.reason ? 'disabled' : ''}>Stop</button>
+          </div>
         </div>`).join('');
       candStates.forEach((cs, i) => {
         document.getElementById('wtPickOffer' + i).onclick = () => {
           wtCommit(`You (alliance #${capIdx + 1}, ${capTeamId}) offered ${cs.id} (EV ${cs.ev != null ? cs.ev.toFixed(3) : '?'}).`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: cs.id });
         };
+        const stopBtn = document.getElementById('wtStopOffer' + i);
+        if (stopBtn && !cs.reason) {
+          stopBtn.onclick = () => { if (cs.worker) cs.worker.terminate(); cs.reason = 'stopped'; paint(); };
+        }
       });
     }
     paint();
@@ -1003,7 +1010,7 @@ function renderWalkthrough() {
       wtCommit(`You (alliance #${capIdx + 1}, ${capTeamId}) offered ${picked} (manual override - no EV computed for this choice).`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: picked });
     };
     candidates.forEach((c, i) => {
-      wtRunSolver(wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: c.id }, (ev, depth, done, reason, breakdown) => {
+      candStates[i].worker = wtRunSolver(wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: c.id }, capTeamId, (ev, depth, done, reason, breakdown) => {
         if (!done) {
           candStates[i].ev = ev; candStates[i].depth = depth;
           if (breakdown) {
