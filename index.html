@@ -67,6 +67,33 @@
   .btn-row button { flex: 1; }
   .hint { font-size: 11px; color: var(--dim); line-height: 1.5; margin-top: 8px; }
   .candidates { display: flex; flex-direction: column; gap: 12px; }
+  .cand-row { display: flex; align-items: stretch; gap: 6px; margin-bottom: 8px; }
+  .cand-box {
+    display: block; flex: 1; min-width: 0; text-align: left; border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 9px; background: var(--panel2); font-family: var(--mono);
+  }
+  .cand-box.leading { border-color: var(--accent2); }
+  .choose-btn {
+    flex-shrink: 0; width: 64px; font-size: 11px; padding: 6px 4px; white-space: normal; line-height: 1.2;
+  }
+  .cand-box-btn {
+    width: 100%; min-height: 0; font-weight: normal; cursor: pointer;
+    -webkit-appearance: none; appearance: none;
+  }
+  .cand-box-btn:hover { border-color: var(--accent); color: var(--text); }
+  .cand-box-btn:active { background: #20262d; }
+  .cand-box-flex { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .cb-left { display: flex; flex-direction: column; justify-content: space-between; gap: 2px; min-height: 68px; }
+  .cb-right { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; gap: 3px; font-size: 12px; min-height: 68px; }
+  .cb-team { font-weight: 700; font-size: 14px; color: var(--text); }
+  .cb-mean { color: var(--text); font-size: 12px; }
+  .cb-green { color: #4fc37a; }
+  .cb-red { color: #e05a5a; }
+  .cb-blue { color: #5a9ee0; }
+  .cb-yellow { color: #e0c95a; }
+  .cb-ev { font-weight: 700; color: var(--accent2); font-size: 26px; line-height: 1.1; }
+  .cb-status { font-size: 10px; color: var(--dim); margin-top: 4px; }
+  .decision-header { font-size: 13px; color: var(--text); margin-bottom: 10px; font-family: var(--mono); }
   .cand-card {
     border: 1px solid var(--line); border-radius: 8px; padding: 14px;
     background: var(--panel2); position: relative; overflow: hidden;
@@ -86,7 +113,7 @@
   canvas.spark { width: 100%; height: 48px; display: block; margin-bottom: 10px; }
   .stat-grid {
     display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
-    font-family: var(--mono); font-size: 10px; color: var(--dim);
+    font-family: var(--mono); font-size: 11px; color: var(--text);
   }
   .stat-grid div b { color: var(--text); display: block; font-size: 13px; font-weight: 600; }
   .status-line { font-size: 11px; color: var(--dim); margin-top: 6px; font-family: var(--mono); }
@@ -105,56 +132,46 @@
 </head>
 <body>
 
-<h1>Alliance Selection <span>/ Walkthrough</span></h1>
-<div class="subtitle" id="topSubtitle">Load an event, pick which team you are, then start the walkthrough.</div>
+<h1>Alliance Selection <span>Solver</span></h1>
+<div class="subtitle" id="topSubtitle"></div>
 
 <div id="setupPanels">
 <div class="panel">
   <div class="panel-title">Import from TBA</div>
   <input id="tbaKey" type="password" placeholder="TBA Read API key" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;">
   <input id="tbaEvent" type="text" value="2026cthar" placeholder="Event key" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;">
-  <button id="btnImportTBA" class="primary" style="width:100%;">Import qual rankings + power</button>
+  <button id="btnImportTBA" class="primary" style="width:100%;">Import Qualification Results</button>
   <div class="hint" id="tbaStatus"></div>
-  <div class="hint">Your key goes straight from this page to TBA's API — never sent anywhere else. Runs a real offense/defense least-squares regression over every qual match (not TBA's precomputed OPR): <b>mean is well-validated</b> (~0.95 correlation with true power). <b>Variance is rougher</b> — one event's matches aren't enough to pin per-team consistency down precisely; treat variance differences as suggestive, not exact. Want your key hardcoded so you don't retype it? Open this file in a text editor, find <code>HARDCODED_TBA_KEY</code> near the top of the script, paste your key between the quotes, and save.</div>
 </div>
 
 <div class="panel">
-  <div class="panel-title">Team pool</div>
-  <div class="btn-row">
-    <button id="btnRandom">Randomize</button>
-    <button id="btnAdversarial">Adversarial</button>
-  </div>
-  <div class="btn-row">
-    <button id="btnAddTeam">+ Team</button>
-    <button id="btnRemoveTeam">− Team</button>
-  </div>
+  <div class="panel-title">Rankings</div>
   <div class="team-table-wrap">
     <table>
-      <thead><tr><th class="rank-col">Qual</th><th>Team</th><th>Mean</th><th>Var</th></tr></thead>
+      <thead><tr><th class="rank-col"></th><th>Team</th><th>CODPR</th><th>Var</th></tr></thead>
       <tbody id="teamTableBody"></tbody>
     </table>
   </div>
-  <div class="hint">Only rank 1 is a fixed captain before the draft — captains 2-8 are named dynamically (highest-ranked still-unrostered team, each time a captain's first pick is accepted), so any other team could end up captain OR picked.</div>
-</div>
+  </div>
 
 <div class="panel">
-  <div class="panel-title">Start walkthrough</div>
+  <div class="panel-title">Alliance Selection</div>
   <div class="hint" style="margin-bottom:8px;">Pick which team you are.</div>
   <select id="wtTeamSelect" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;"></select>
-  <button id="btnStartWalkthrough" class="primary" style="width:100%;">Start walkthrough →</button>
+  <button id="btnStartWalkthrough" class="primary" style="width:100%;">Start</button>
 </div>
 </div>
 
 <div id="walkthroughPanel" class="panel" style="display:none;">
   <div class="hint" style="margin-bottom:10px;"><a href="#" id="btnBackToSetup" style="color:var(--dim);">← back to setup</a> &nbsp;·&nbsp; <span id="wtWhoAmI"></span></div>
-  <div class="stat-grid" id="wtRosterBoard" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px;"></div>
+  <div class="stat-grid" id="wtRosterBoard" style="margin-bottom:14px;"></div>
   <div id="wtDecisionPanel"></div>
-  <div class="hint" style="margin-top:14px;"><b>History</b></div>
-  <div id="wtHistoryLog" style="font-family:var(--mono);font-size:11px;color:var(--dim);max-height:160px;overflow-y:auto;line-height:1.6;"></div>
-  <div class="btn-row" style="margin-top:10px;">
+  <div class="btn-row" style="margin-top:14px;">
     <button id="btnUndo" disabled>Undo</button>
-    <button id="btnResetWalkthrough">Restart draft</button>
+    <button id="btnResetWalkthrough">Restart</button>
   </div>
+  <div class="hint" style="margin-top:10px;"><b>History</b></div>
+  <div id="wtHistoryLog" style="font-family:var(--mono);font-size:11px;color:var(--dim);max-height:160px;overflow-y:auto;line-height:1.6;"></div>
 </div>
 
 <script id="worker-src" type="javascript/worker">
@@ -235,11 +252,13 @@ const TEAMS_PER_ALLIANCE = 3;
 const OFFER_BRANCH = 3;
 
 function buildSolver(teams) {
-  const MEMO_CAP = 150000; // real stop condition now - memory is a hard resource limit, not something to silently clear past
+  const MEMO_CAP = Infinity; // TEMPORARILY disabled for real-device trial run - was 40000, will recalibrate once you report where it actually crashes
+  const NODE_CAP = Infinity; // TEMPORARILY disabled for real-device trial run - was 150000, same recalibration plan
   teams = teams.slice();
   const byId = new Map(teams.map(t => [t.id, t]));
   const rankOrder = teams.slice().sort((a, b) => a.qualRank - b.qualRank); // captain order = qual rank, NOT mean power
   const trueLeafMemo = new Map();
+  const widthByLevel = new Map(); // depthFromRoot -> target branching width, default OFFER_BRANCH
 
   function rosterKey(r) { return r[0] + ':' + r.slice(1).slice().sort().join(','); }
   function fullSignature(rosters) { return rosters.map(rosterKey).join('|'); }
@@ -274,7 +293,7 @@ function buildSolver(teams) {
     return newRosters;
   }
 
-  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, inherited: 0, memoCapHit: false };
+  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, inherited: 0, memoCapHit: false, widenEvents: 0 };
 
   function evaluateLeaf(rosters) {
     const key = fullSignature(rosters);
@@ -297,7 +316,7 @@ function buildSolver(teams) {
       if (roster[2] != null) vec[roster[2]] = allianceVals[i] + secondPts;
     }
     for (const t of teams) if (!(t.id in vec)) vec[t.id] = 0;
-    if (trueLeafMemo.size > MEMO_CAP) stats.memoCapHit = true; // real resource limit hit - stop, don't silently clear and keep growing anyway
+    if (trueLeafMemo.size > MEMO_CAP) stats.memoCapHit = true;
     else trueLeafMemo.set(key, vec);
     return vec;
   }
@@ -315,11 +334,11 @@ function buildSolver(teams) {
     return evaluateLeaf(r);
   }
 
-  function makeNode(rosters, blacklist, pendingOffer) {
+  function makeNode(rosters, blacklist, pendingOffer, depthFromRoot) {
     return {
-      rosters, blacklist, pendingOffer,
+      rosters, blacklist, pendingOffer, depthFromRoot: depthFromRoot || 0,
       kind: pendingOffer ? 'acceptDecline' : (isComplete(rosters) ? 'leaf' : 'offer'),
-      children: null, value: null, isFrontier: false,
+      children: null, value: null, isFrontier: false, childDepthBudget: 0, capTeamId: null,
     };
   }
 
@@ -327,6 +346,16 @@ function buildSolver(teams) {
   class MemoCapExceeded extends Error {}
   function checkMemoCap() {
     if (stats.memoCapHit && (++checkCounter & 0xFFF) === 0) throw new MemoCapExceeded();
+  }
+
+  function mergeOfferNode(node) {
+    let bestVal = -Infinity, bestVec = null;
+    for (const child of node.children) {
+      if (!child) continue;
+      const v = child.value[node.capTeamId] || 0;
+      if (v > bestVal) { bestVal = v; bestVec = child.value; }
+    }
+    node.value = bestVec;
   }
 
   function ensureDepth(node, depthBudget) {
@@ -347,37 +376,37 @@ function buildSolver(teams) {
     const wasFrontier = node.isFrontier;
     if (node.children === null) {
       stats.realNodes++;
+      if (stats.realNodes > NODE_CAP) stats.memoCapHit = true;
       if (node.kind === 'offer') {
         const capIdx = getActiveAllianceIdx(node.rosters);
         const capTeamId = node.rosters[capIdx][0];
         node.capTeamId = capTeamId;
-        const candidates = getAvailable(node.rosters, node.blacklist).slice(0, OFFER_BRANCH);
+        const width = widthByLevel.get(node.depthFromRoot) || OFFER_BRANCH;
+        const candidates = getAvailable(node.rosters, node.blacklist).slice(0, width);
         if (candidates.length === 0) {
           node.kind = 'leaf'; node.value = evaluateLeaf(node.rosters); node.isFrontier = false; return;
         }
         node.children = [];
-        let bestValSoFar = -Infinity;
+        node.childDepthBudget = depthBudget - 1;
         for (let i = 0; i < candidates.length; i++) {
           const cand = candidates[i];
-          const child = makeNode(node.rosters, node.blacklist, { allianceIdx: capIdx, teamId: cand.id });
+          const child = makeNode(node.rosters, node.blacklist, { allianceIdx: capIdx, teamId: cand.id }, node.depthFromRoot + 1);
           if (i === 0 && wasFrontier) { child.value = node.value; child.isFrontier = true; stats.inherited++; }
           ensureDepth(child, depthBudget - 1);
           node.children.push(child);
-          const v = child.value[capTeamId] || 0;
-          if (v > bestValSoFar) bestValSoFar = v;
         }
       } else {
         const { allianceIdx, teamId } = node.pendingOffer;
         node.allianceIdx = allianceIdx; node.teamId = teamId;
         const acceptRosters = applyAccept(node.rosters, allianceIdx, teamId);
-        const acceptChild = makeNode(acceptRosters, node.blacklist, null);
+        const acceptChild = makeNode(acceptRosters, node.blacklist, null, node.depthFromRoot + 1);
         if (wasFrontier) { acceptChild.value = node.value; acceptChild.isFrontier = true; stats.inherited++; }
         ensureDepth(acceptChild, depthBudget - 1);
         const captainSlotsRemaining = 8 - node.rosters.length;
         let declineChild = null;
         if (captainSlotsRemaining > 0) {
           const declineBlacklist = new Set(node.blacklist); declineBlacklist.add(teamId);
-          declineChild = makeNode(node.rosters, declineBlacklist, null);
+          declineChild = makeNode(node.rosters, declineBlacklist, null, node.depthFromRoot + 1);
           ensureDepth(declineChild, depthBudget - 1);
         }
         node.children = [acceptChild, declineChild];
@@ -385,20 +414,14 @@ function buildSolver(teams) {
       node.isFrontier = false;
     } else {
       if (node.kind === 'offer') {
+        node.childDepthBudget = depthBudget - 1;
         for (const child of node.children) { if (child === null) continue; ensureDepth(child, depthBudget - 1); }
       } else {
         for (const child of node.children) if (child) ensureDepth(child, depthBudget - 1);
       }
     }
-    if (node.kind === 'offer') {
-      let bestVal = -Infinity, bestVec = null;
-      for (const child of node.children) {
-        if (child === null) continue;
-        const v = child.value[node.capTeamId] || 0;
-        if (v > bestVal) { bestVal = v; bestVec = child.value; }
-      }
-      node.value = bestVec;
-    } else {
+    if (node.kind === 'offer') mergeOfferNode(node);
+    else {
       const [acceptChild, declineChild] = node.children;
       if (!declineChild) { node.value = acceptChild.value; }
       else {
@@ -406,15 +429,54 @@ function buildSolver(teams) {
         const acceptVal = acceptChild.value, declineVal = declineChild.value;
         if ((declineVal[teamId] || 0) > (acceptVal[teamId] || 0)) {
           const out = {};
-          for (const k in declineVal) out[k] = 0.9 * declineVal[k];
-          for (const k in acceptVal) out[k] = (out[k] || 0) + 0.1 * acceptVal[k];
+          for (const k in declineVal) out[k] = 0.99 * declineVal[k];
+          for (const k in acceptVal) out[k] = (out[k] || 0) + 0.01 * acceptVal[k];
           node.value = out;
         } else { node.value = acceptVal; }
       }
     }
   }
 
-  return { rankOrder, teams, stats, ensureDepth, makeNode, MemoCapExceeded };
+  // Finds the max depthFromRoot among currently-REAL offer nodes (children
+  // !== null) - the deepest level worth widening right now.
+  function findMaxRealOfferDepth(node) {
+    if (!node || node.kind === 'leaf') return -1;
+    let max = -1;
+    if (node.kind === 'offer' && node.children !== null) max = node.depthFromRoot;
+    if (node.children) for (const child of node.children) max = Math.max(max, findMaxRealOfferDepth(child));
+    return max;
+  }
+
+  // Widens all real offer nodes at exactly targetLevel to widthByLevel.get(targetLevel)
+  // (set by the caller before this runs) - adds new candidate children beyond
+  // whatever's already there, ensureDepth'd to match existing siblings' depth.
+  function widenAtLevel(node, targetLevel) {
+    if (!node || node.kind === 'leaf') return;
+    if (node.depthFromRoot === targetLevel) {
+      if (node.kind === 'offer' && node.children !== null) {
+        const newWidth = widthByLevel.get(targetLevel) || OFFER_BRANCH;
+        if (node.children.length < newWidth) {
+          const already = new Set(node.children.filter(c => c).map(c => c.pendingOffer.teamId));
+          const avail = getAvailable(node.rosters, node.blacklist).filter(c => !already.has(c.id));
+          const need = newWidth - node.children.length;
+          for (let i = 0; i < need && i < avail.length; i++) {
+            const cand = avail[i];
+            const child = makeNode(node.rosters, node.blacklist, { allianceIdx: getActiveAllianceIdx(node.rosters), teamId: cand.id }, node.depthFromRoot + 1);
+            ensureDepth(child, node.childDepthBudget);
+            node.children.push(child);
+            stats.widenEvents++;
+          }
+          mergeOfferNode(node);
+        }
+      }
+      return; // deeper nodes are beyond targetLevel - not relevant to this pass
+    }
+    if (node.depthFromRoot < targetLevel && node.children) {
+      for (const child of node.children) widenAtLevel(child, targetLevel);
+    }
+  }
+
+  return { rankOrder, teams, stats, ensureDepth, makeNode, MemoCapExceeded, widthByLevel, findMaxRealOfferDepth, widenAtLevel };
 }
 
 // A node still needs real expansion if it's a non-leaf with no children yet
@@ -435,51 +497,198 @@ function countFrontier(node) {
 self.onmessage = function(e) {
   const { teams, rosters, blacklist, pendingOffer, myTeamId } = e.data;
   const solver = buildSolver(teams);
-  const node = solver.makeNode(rosters, new Set(blacklist), pendingOffer || null);
+  const node = solver.makeNode(rosters, new Set(blacklist), pendingOffer || null, 0);
   const t0 = Date.now();
-  for (let depth = 1; ; depth++) {
+
+  const EPS = 1e-9;
+  let depth = 1;
+  let mode = 'deepen';
+  let evHistory = [];
+  let widenSweepLevel = null;
+  let currentWidenTarget = OFFER_BRANCH;
+  let widenEventsAtSweepStart = 0;
+  let widenCycles = 0; // how many times we've entered widen mode - first cycle needs 4 plateaued rounds, every cycle after needs only 3
+  let lastPostTime = 0;
+  // Once frontierCount genuinely hits 0, depth has reached its TRUE
+  // structural maximum for this query - there is no more real depth to
+  // explore, ever, regardless of what happens afterward. Without this flag,
+  // a later widen sweep that happens to succeed (very likely once there's a
+  // large team pool with room to keep adding candidates) would still bump
+  // depth on pure bookkeeping, even though nothing new was actually explored
+  // in the depth dimension - across many such successful sweeps (3->4->5->
+  // 6->7->...), depth could inflate well past the tree's real bottom. Once
+  // this flag is set, depth is frozen for good; only width keeps moving.
+  let depthIsFinal = false;
+
+  function plateaued() {
+    const threshold = widenCycles === 0 ? 4 : 3;
+    if (evHistory.length < threshold) return false;
+    const last = evHistory.slice(-threshold);
+    return (Math.max(...last) - Math.min(...last)) < EPS;
+  }
+  // Is declining trivial (guaranteed worthless) for `teamId` given the
+  // CURRENT roster state? Two ways this can be true:
+  //  (a) C===0: all 8 captains already locked in - no captaincy path exists
+  //      at all anymore, for anyone.
+  //  (b) H >= C+P: even in the most optimistic case - every one of the H
+  //      currently-unaffiliated teams ranked higher than this team gets
+  //      absorbed as a PICK (not captain) as early as structurally possible
+  //      - there still aren't enough remaining ROUND-1 pick opportunities
+  //      (P) to clear a path to one of the C remaining captain slots. ONLY
+  //      round-1 picks count here: round-2 doesn't start until ALL 8
+  //      captains are already locked in, so a round-2 slot happens strictly
+  //      AFTER captaincy is already decided and can never help resolve it -
+  //      counting them (an earlier draft of this formula did) wrongly
+  //      overstated how much "absorption capacity" exists. P here is: each
+  //      currently-existing captain who hasn't made their round-1 pick yet,
+  //      plus each of the C future captains' own eventual round-1 pick.
+  //  If H < C+P, there EXISTS at least one (however contrived) sequence of
+  //  offers/accepts that clears a captaincy path for this team - not
+  //  trivial, however unlikely in practice.
+  function computeDeclineTrivial(rosters, teamId) {
+    const C = 8 - rosters.length;
+    if (C === 0) return true;
+    const rostered = new Set(rosters.flat());
+    const myRankIdx = solver.rankOrder.findIndex(t => t.id === teamId);
+    let H = 0;
+    for (let i = 0; i < myRankIdx; i++) if (!rostered.has(solver.rankOrder[i].id)) H++;
+    let existingCaptainsNeedingFirstPick = 0;
+    for (const r of rosters) if (r.length === 1) existingCaptainsNeedingFirstPick++;
+    const P = existingCaptainsNeedingFirstPick + C;
+    return H >= C + P;
+  }
+  function computeBreakdown() {
+    if (!(node.kind === 'acceptDecline' && node.children)) return null;
+    const [acceptChild, declineChild] = node.children;
+    const candId = node.pendingOffer.teamId;
+    const declineTrivial = computeDeclineTrivial(node.rosters, candId);
+    return {
+      myEvIfAccept: acceptChild ? (acceptChild.value[myTeamId] || 0) : null,
+      myEvIfDecline: declineChild ? (declineChild.value[myTeamId] || 0) : null,
+      candidateEvIfAccept: acceptChild ? (acceptChild.value[candId] || 0) : null,
+      candidateEvIfDecline: declineChild ? (declineChild.value[candId] || 0) : null,
+      declineTrivial,
+    };
+  }
+  // "depth.width" status: depth as usual, plus the average branching width
+  // actually used across every level explored so far (default OFFER_BRANCH
+  // for any level never widened). E.g. 9 levels at width 3 + 1 level at
+  // width 4 -> "10.3.1" (avg = (9*3+4)/10 = 3.1).
+  function computeStatus() {
+    let sum = 0;
+    for (let lvl = 0; lvl < depth; lvl++) sum += solver.widthByLevel.get(lvl) || OFFER_BRANCH;
+    const avgWidth = depth > 0 ? sum / depth : OFFER_BRANCH;
+    return `${depth}.${avgWidth.toFixed(1)}`;
+  }
+  function postDone(reason) {
+    self.postMessage({
+      type: 'done', reason, depth,
+      status: computeStatus(),
+      ev: node.value[myTeamId] || 0,
+      breakdown: computeBreakdown(),
+      frontierCount: countFrontier(node),
+      stats: Object.assign({}, solver.stats),
+    });
+  }
+
+  while (true) {
     const roundStart = Date.now();
     try {
-      solver.ensureDepth(node, depth);
+      if (mode === 'deepen') {
+        solver.ensureDepth(node, depth);
+      } else {
+        solver.widthByLevel.set(widenSweepLevel, currentWidenTarget);
+        solver.widenAtLevel(node, widenSweepLevel);
+      }
     } catch (err) {
-      if (err instanceof solver.MemoCapExceeded) { self.postMessage({ type: 'done', reason: 'memory' }); return; }
+      if (err instanceof solver.MemoCapExceeded) { postDone('memory'); return; }
       throw err;
     }
     const roundMs = Date.now() - roundStart;
     const cumMs = Date.now() - t0;
-    // Breakdown: accept-child and decline-child values, for both the
-    // requester's own team and (if this is an offer being evaluated) the
-    // candidate's own team - already computed internally, just exposing it.
-    let breakdown = null;
-    if (node.kind === 'acceptDecline' && node.children) {
-      const [acceptChild, declineChild] = node.children;
-      const candId = node.pendingOffer.teamId;
-      breakdown = {
-        myEvIfAccept: acceptChild ? (acceptChild.value[myTeamId] || 0) : null,
-        myEvIfDecline: declineChild ? (declineChild.value[myTeamId] || 0) : null,
-        candidateEvIfAccept: acceptChild ? (acceptChild.value[candId] || 0) : null,
-        candidateEvIfDecline: declineChild ? (declineChild.value[candId] || 0) : null,
-      };
-    }
     const frontierCount = countFrontier(node);
-    self.postMessage({
-      type: 'progress', depth, roundMs, cumMs,
-      ev: node.value[myTeamId] || 0,
-      breakdown,
-      frontierCount,
-      stats: Object.assign({}, solver.stats),
-    });
-    if (solver.stats.memoCapHit) { self.postMessage({ type: 'done', reason: 'memory' }); return; }
-    if (node.kind === 'leaf' && depth >= 1) { self.postMessage({ type: 'done', reason: 'exact' }); return; } // already-complete rosters at input - nothing to deepen
-    // Only declare true convergence once NO node anywhere in the tree is still
-    // a rollout stand-in (children === null on a non-leaf node) - i.e. every
-    // branch bottoms out at a real, exactly-evaluated leaf. A naive "did the
-    // rollout counter stop climbing" check is a cache-hit proxy, not a real
-    // completeness check: since rollout() is deterministic and leaves are
-    // memoized by final roster, most rollouts from a wide-open frontier land
-    // on already-cached leaves almost immediately, so that counter goes flat
-    // long before the tree is actually done - falsely reporting convergence.
-    if (frontierCount === 0) { self.postMessage({ type: 'done', reason: 'converged' }); return; }
+    const ev = node.value[myTeamId] || 0;
+
+    // Throttle: post at most ~10 progress updates/sec. When rounds resolve
+    // near-instantly (a nearly-finished draft), reporting every single one
+    // would flood the main thread's message queue faster than the browser
+    // can render or handle taps - this keeps the UI responsive regardless of
+    // how fast the underlying computation runs. NOTE: this can silently drop
+    // every intermediate update when the whole search finishes inside one
+    // throttle window (very common near the end of the draft, where trees
+    // are small) - postDone() below guards against that by always including
+    // the TRUE final state in the done message itself, so the display never
+    // freezes on a stale early snapshot even if every progress update in
+    // between got throttled away.
+    const nowTime = Date.now();
+    if (nowTime - lastPostTime > 100) {
+      lastPostTime = nowTime;
+      self.postMessage({
+        type: 'progress', depth, roundMs, cumMs, ev,
+        status: computeStatus(),
+        breakdown: computeBreakdown(),
+        frontierCount,
+        stats: Object.assign({}, solver.stats),
+      });
+    }
+
+    if (solver.stats.memoCapHit) { postDone('memory'); return; }
+    if (node.kind === 'leaf' && depth >= 1) { postDone('exact'); return; }
+
+    if (mode === 'deepen') {
+      evHistory.push(ev);
+      // Real convergence (frontierCount===0) no longer stops the search -
+      // it just means there's nothing left to DEEPEN, but width can always
+      // keep increasing, so treat it exactly like a plateau: start widening.
+      if (frontierCount === 0) depthIsFinal = true; // permanent - depth never moves again after this
+      if (frontierCount === 0 || plateaued()) {
+        widenSweepLevel = solver.findMaxRealOfferDepth(node);
+        if (widenSweepLevel < 0) {
+          if (frontierCount === 0) {
+            // No offer-type node exists ANYWHERE in this tree, AND there's no
+            // remaining depth either - genuinely nothing left in either
+            // direction (the very-end-of-draft case: this query's root is
+            // already an accept/decline decision whose only path leads
+            // straight to a complete leaf). Stop for real.
+            postDone('exhausted');
+            return;
+          }
+          // No REAL offer node exists YET to widen, but frontierCount > 0
+          // means real depth still remains unexplored (some node is still
+          // just a rollout stand-in) - a plateau triggered this check
+          // prematurely, before depth reached far enough to create a real
+          // offer node. Keep deepening instead of wrongly declaring
+          // exhaustion - widening only becomes possible once there's an
+          // actual offer node to widen.
+          depth++;
+        } else {
+          mode = 'widen';
+          currentWidenTarget += 1;
+          widenEventsAtSweepStart = solver.stats.widenEvents;
+          widenCycles++;
+          evHistory = [];
+        }
+      } else {
+        depth++;
+      }
+    } else {
+      widenSweepLevel -= 1;
+      if (widenSweepLevel < 0) {
+        // Sweep complete. Only genuinely nothing left to explore if BOTH
+        // directions are exhausted: the sweep added no new candidates
+        // anywhere AND there's no remaining depth to explore either
+        // (frontierCount===0). A plateau can trigger a widen sweep well
+        // before the tree is actually fully deepened - if that sweep adds
+        // nothing (the levels explored so far already have their natural
+        // max candidates) but frontierCount is still > 0, there is real,
+        // unexplored depth beyond what's been reached - resume deepening
+        // instead of wrongly declaring total exhaustion.
+        const sweepAddedNothing = solver.stats.widenEvents === widenEventsAtSweepStart;
+        if (sweepAddedNothing && frontierCount === 0) { postDone('exhausted'); return; }
+        mode = 'deepen';
+        if (!depthIsFinal) depth++; // only advance depth if the tree hasn't ALREADY hit its true bottom - a successful widen sweep after that point explored more width, not more depth, so depth must not move
+      }
+    }
   }
 };
 </script>
@@ -506,6 +715,120 @@ function randNormal(rng, mu, sigma) {
   const u1 = Math.max(rng(), 1e-9), u2 = rng();
   const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   return mu + sigma * z;
+}
+
+// ============================================================
+// Self-contained copy of the bracket EV math (same as the worker's), used
+// ONLY here on the main thread to display playoff-only EV (no selection
+// points) once the draft completes. Kept separate from the worker's
+// validated solver rather than reaching into it, to avoid touching that
+// code for a pure display feature.
+// ============================================================
+function mainThreadErf(x) {
+  const sign = x < 0 ? -1 : 1; x = Math.abs(x);
+  const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+  const t = 1 / (1 + p * x);
+  const y = 1 - (((((a5*t+a4)*t)+a3)*t+a2)*t+a1) * t * Math.exp(-x*x);
+  return sign * y;
+}
+function mainThreadNormalCDF(x) { return 0.5 * (1 + mainThreadErf(x / Math.SQRT2)); }
+function mainThreadWinProb(meanA, varA, meanB, varB) {
+  const sigma = Math.sqrt(varA + varB) || 1e-6;
+  return mainThreadNormalCDF((meanA - meanB) / sigma);
+}
+const MT_BRACKET_MATCHES = [
+  { id: 'M1',  red: { t: 'seed', s: 0 }, blue: { t: 'seed', s: 7 } },
+  { id: 'M2',  red: { t: 'seed', s: 3 }, blue: { t: 'seed', s: 4 } },
+  { id: 'M3',  red: { t: 'seed', s: 1 }, blue: { t: 'seed', s: 6 } },
+  { id: 'M4',  red: { t: 'seed', s: 2 }, blue: { t: 'seed', s: 5 } },
+  { id: 'M5',  red: { t: 'loser', m: 'M1' }, blue: { t: 'loser', m: 'M2' } },
+  { id: 'M6',  red: { t: 'loser', m: 'M3' }, blue: { t: 'loser', m: 'M4' } },
+  { id: 'M7',  red: { t: 'winner', m: 'M1' }, blue: { t: 'winner', m: 'M2' } },
+  { id: 'M8',  red: { t: 'winner', m: 'M3' }, blue: { t: 'winner', m: 'M4' } },
+  { id: 'M9',  red: { t: 'loser', m: 'M7' }, blue: { t: 'winner', m: 'M6' } },
+  { id: 'M10', red: { t: 'loser', m: 'M8' }, blue: { t: 'winner', m: 'M5' } },
+  { id: 'M11', red: { t: 'winner', m: 'M7' }, blue: { t: 'winner', m: 'M8' } },
+  { id: 'M12', red: { t: 'winner', m: 'M9' }, blue: { t: 'winner', m: 'M10' } },
+  { id: 'M13', red: { t: 'loser', m: 'M11' }, blue: { t: 'winner', m: 'M12' } },
+];
+const MT_MATCH_INDEX = {};
+MT_BRACKET_MATCHES.forEach((m, i) => { MT_MATCH_INDEX[m.id] = i; });
+const MT_M11 = MT_MATCH_INDEX['M11'], MT_M13 = MT_MATCH_INDEX['M13'], MT_M12 = MT_MATCH_INDEX['M12'];
+const MT_NUM_MATCHES = MT_BRACKET_MATCHES.length;
+function mainThreadBracketEV(meanArr, varArr) {
+  const redOf = new Int8Array(MT_NUM_MATCHES), blueOf = new Int8Array(MT_NUM_MATCHES), winnerOf = new Int8Array(MT_NUM_MATCHES);
+  const value = new Array(8).fill(0);
+  function resolve(ref) {
+    if (ref.t === 'seed') return ref.s;
+    const idx = MT_MATCH_INDEX[ref.m];
+    if (ref.t === 'winner') return winnerOf[idx];
+    return winnerOf[idx] === redOf[idx] ? blueOf[idx] : redOf[idx];
+  }
+  function recurse(pos, prob) {
+    if (prob <= 0) return;
+    if (pos === MT_NUM_MATCHES) {
+      const loserM12 = winnerOf[MT_M12] === redOf[MT_M12] ? blueOf[MT_M12] : redOf[MT_M12];
+      const loserM13 = winnerOf[MT_M13] === redOf[MT_M13] ? blueOf[MT_M13] : redOf[MT_M13];
+      value[loserM12] += prob * 7;
+      value[loserM13] += prob * 13;
+      const m11w = winnerOf[MT_M11], m13w = winnerOf[MT_M13];
+      const p = mainThreadWinProb(meanArr[m11w], varArr[m11w], meanArr[m13w], varArr[m13w]);
+      const pSweepM11 = p * p, p3M11 = 2 * p * p * (1 - p);
+      const pSweepM13 = (1 - p) * (1 - p), p3M13 = 2 * (1 - p) * (1 - p) * p;
+      value[m11w] += prob * ((pSweepM11 + p3M11) * 30 + pSweepM13 * 20 + p3M13 * 25);
+      value[m13w] += prob * ((pSweepM13 + p3M13) * 30 + pSweepM11 * 20 + p3M11 * 25);
+      return;
+    }
+    const match = MT_BRACKET_MATCHES[pos];
+    const red = resolve(match.red), blue = resolve(match.blue);
+    redOf[pos] = red; blueOf[pos] = blue;
+    const pRed = mainThreadWinProb(meanArr[red], varArr[red], meanArr[blue], varArr[blue]);
+    winnerOf[pos] = red;  recurse(pos + 1, prob * pRed);
+    winnerOf[pos] = blue; recurse(pos + 1, prob * (1 - pRed));
+  }
+  recurse(0, 1.0);
+  return value;
+}
+
+// Main-thread port of the worker's computeDeclineTrivial - lets the UI know
+// up front (no worker needed) whether declining is guaranteed to forfeit any
+// shot at captaincy, so we can skip spinning up a whole tree search for it.
+function mtComputeDeclineTrivial(rosters, teamId, rankOrder) {
+  const C = 8 - rosters.length;
+  if (C === 0) return true;
+  const rostered = new Set(rosters.flat());
+  const myRankIdx = rankOrder.findIndex(t => t.id === teamId);
+  let H = 0;
+  for (let i = 0; i < myRankIdx; i++) if (!rostered.has(rankOrder[i].id)) H++;
+  let existingCaptainsNeedingFirstPick = 0;
+  for (const r of rosters) if (r.length === 1) existingCaptainsNeedingFirstPick++;
+  const P = existingCaptainsNeedingFirstPick + C;
+  return H >= C + P;
+}
+
+// Main-thread port of the worker's evaluateLeaf (no memoization needed - only
+// ever called once per use here). Used to get an exact value directly,
+// without spinning up a worker, whenever a decision is known in advance to
+// lead straight to a completed roster (e.g. alliance 1's final pick).
+function mtEvaluateLeaf(rosters, teamsList) {
+  const teamById = new Map(teamsList.map(t => [t.id, t]));
+  const meanArr = new Array(8).fill(0), varArr = new Array(8).fill(0);
+  for (let i = 0; i < rosters.length; i++) {
+    let m = 0, v = 0;
+    for (const tid of rosters[i]) { const t = teamById.get(tid); m += t.mean; v += t.variance; }
+    meanArr[i] = m; varArr[i] = v;
+  }
+  const allianceVals = mainThreadBracketEV(meanArr, varArr);
+  const vec = {};
+  for (let i = 0; i < rosters.length; i++) {
+    const allianceNumber = i + 1, capFirstPts = 17 - allianceNumber, secondPts = allianceNumber;
+    const roster = rosters[i];
+    if (roster[0] != null) vec[roster[0]] = allianceVals[i] + capFirstPts;
+    if (roster[1] != null) vec[roster[1]] = allianceVals[i] + capFirstPts;
+    if (roster[2] != null) vec[roster[2]] = allianceVals[i] + secondPts;
+  }
+  for (const t of teamsList) if (!(t.id in vec)) vec[t.id] = 0;
+  return vec;
 }
 
 let teams = [];
@@ -557,7 +880,7 @@ function renderTeamTable() {
     const isCaptain1 = t.qualRank === 1;
     tr.innerHTML = `
       <td class="rank-col">${t.qualRank}</td>
-      <td>${t.id}${isCaptain1 ? '<span class="captain-badge">CAPTAIN 1</span>' : ''}</td>
+      <td>${t.id}${isCaptain1 ? '' : ''}</td>
       <td><input type="number" step="0.1" value="${t.mean}" data-id="${t.id}" data-field="mean"></td>
       <td><input type="number" step="0.1" value="${t.variance}" data-id="${t.id}" data-field="variance"></td>
     `;
@@ -572,10 +895,7 @@ function renderTeamTable() {
   const cap1 = teams.find(t => t.qualRank === 1);
 }
 
-document.getElementById('btnRandom').onclick = () => { teams = randomizeTeams(Math.max(teams.length, 32)); renderTeamTable(); };
-document.getElementById('btnAdversarial').onclick = () => { teams = adversarialTeams(Math.max(teams.length, 32)); renderTeamTable(); };
-document.getElementById('btnAddTeam').onclick = () => { teams.push({ id: 'T' + (teams.length + 1), mean: 25, variance: 10, qualRank: teams.length + 1 }); renderTeamTable(); };
-document.getElementById('btnRemoveTeam').onclick = () => { if (teams.length > 9) teams.pop(); renderTeamTable(); };
+
 
 // ============================================================
 // LSS offense/defense regression + residual-based variance.
@@ -706,7 +1026,7 @@ async function importFromTBA() {
       variance: +variance[i].toFixed(2),
     }));
     renderTeamTable();
-    statusEl.textContent = `Imported ${teams.length} teams from ${matches.length} qual matches at ${eventKey}. Mean is well-validated (own offense/defense LSS, matches TBA's OPR methodology). Variance is a rough, shrinkage-stabilized estimate — a single event's matches aren't enough data to pin per-team variance down precisely (validated against synthetic ground truth: needs ~10x more matches than one event has for reliable per-team differentiation). Treat variance differences as suggestive, not precise.`;
+    statusEl.textContent = `Imported ${teams.length} teams from ${matches.length} qual matches at ${eventKey}. `;
   } catch (err) {
     statusEl.textContent = 'Error: ' + err.message + ' — possible causes: wrong key/event, event has no posted results yet, or TBA blocked the cross-origin request (CORS) from this page.';
   }
@@ -805,13 +1125,54 @@ document.getElementById('btnUndo').onclick = () => {
 
 function renderRosterBoard() {
   const board = document.getElementById('wtRosterBoard');
+  const complete = wtIsComplete(wt.rosters);
+  let playoffOnly = null;
+  if (complete) {
+    const teamById = new Map(teams.map(t => [t.id, t]));
+    const meanArr = new Array(8).fill(0), varArr = new Array(8).fill(0);
+    for (let i = 0; i < 8; i++) {
+      let m = 0, v = 0;
+      for (const tid of wt.rosters[i]) { const t = teamById.get(tid); m += t.mean; v += t.variance; }
+      meanArr[i] = m; varArr[i] = v;
+    }
+    playoffOnly = mainThreadBracketEV(meanArr, varArr);
+    // 'auto auto' (not '1fr auto'): both columns size to their own content,
+    // so the EV column sits right after the widest alliance label instead of
+    // being stretched to the panel's far edge - EVs still align vertically
+    // across all 8 rows since grid computes one shared width per column.
+    board.style.gridTemplateColumns = 'auto auto';
+    board.style.gridTemplateRows = 'none';
+    board.style.gridAutoFlow = 'row';
+    board.style.alignItems = 'baseline';
+    board.style.rowGap = '4px';
+    board.style.columnGap = '14px';
+    board.style.justifyContent = 'start';
+  } else {
+    board.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    board.style.gridTemplateRows = 'repeat(4, auto)';
+    board.style.gridAutoFlow = 'column'; // fills column-major: alliances 1-4 in col 1, 5-8 in col 2
+    board.style.alignItems = '';
+    board.style.rowGap = '';
+  }
   board.innerHTML = '';
   for (let i = 0; i < wt.rosters.length; i++) {
     const r = wt.rosters[i];
+    if (playoffOnly) {
+      const label = document.createElement('div');
+      label.innerHTML = `<b>#${i + 1}</b>${r.join(', ') || '—'}`;
+      const value = document.createElement('div');
+      value.style.color = 'var(--accent2)';
+      value.style.whiteSpace = 'nowrap';
+      value.textContent = `EV ${playoffOnly[i].toFixed(3)}`;
+      board.appendChild(label);
+      board.appendChild(value);
+      continue;
+    }
     const div = document.createElement('div');
     div.innerHTML = `<b>#${i + 1}</b>${r.join(', ') || '—'}`;
     board.appendChild(div);
   }
+  return playoffOnly;
 }
 function renderHistory() {
   document.getElementById('wtHistoryLog').innerHTML = wt.history.map(h => `<div>${h}</div>`).join('');
@@ -838,8 +1199,8 @@ function wtRunSolver(rosters, blacklist, pendingOffer, forTeamId, onUpdate) {
   wt.activeWorkers.push(worker);
   worker.onmessage = (e) => {
     const msg = e.data;
-    if (msg.type === 'progress') onUpdate(msg.ev, msg.depth, false, null, msg.breakdown);
-    else if (msg.type === 'done') onUpdate(null, null, true, msg.reason, null);
+    if (msg.type === 'progress') onUpdate(msg.ev, msg.depth, false, null, msg.breakdown, msg.status);
+    else if (msg.type === 'done') onUpdate(msg.ev, msg.depth, true, msg.reason, msg.breakdown, msg.status);
   };
   worker.postMessage({
     teams, rosters, blacklist: Array.from(blacklist), pendingOffer,
@@ -848,7 +1209,38 @@ function wtRunSolver(rosters, blacklist, pendingOffer, forTeamId, onUpdate) {
   return worker;
 }
 
-function stopWtWorkers() { wt.activeWorkers.forEach(w => w.terminate()); wt.activeWorkers = []; }
+function stopWtWorkers() {
+  wt.activeWorkers.forEach(w => w.terminate()); wt.activeWorkers = [];
+  if (wt.repainter) { wt.repainter.stop(); wt.repainter = null; }
+}
+
+// The solver can post progress dozens of times per second while depth/width
+// are climbing. Repainting the DOM on every tick was the real cause behind
+// taps on candidate cards not registering: the numbers (and therefore the
+// card's height/contents) were changing out from under a tap in progress,
+// which browsers treat as a reason to cancel the gesture. This decouples the
+// two: solver callbacks always update the underlying state immediately
+// (nothing is lost or delayed). For the first 0.2s, every update paints
+// immediately too (nothing hidden) - useful for seeing the very first real
+// numbers land right away. After 0.2s, painting switches to throttled mode:
+// only flushes at 1s, 2s, 3s... or when explicitly flushed (a manual tap) -
+// so a card's geometry stays put long enough between updates to tap
+// reliably, once the initial burst has settled.
+function createThrottledPainter(paintFn) {
+  let dirty = false;
+  let liveMode = true;
+  paintFn(); // paint immediately once so the panel isn't blank
+  const switchTimer = setTimeout(() => { liveMode = false; }, 200);
+  const intervalTimer = setInterval(() => { if (dirty) { dirty = false; paintFn(); } }, 1000);
+  return {
+    markDirty() {
+      if (liveMode) { dirty = false; paintFn(); }
+      else dirty = true;
+    },
+    flushNow() { dirty = false; paintFn(); },
+    stop() { clearTimeout(switchTimer); clearInterval(intervalTimer); },
+  };
+}
 
 function renderWalkthrough() {
   renderRosterBoard();
@@ -857,7 +1249,7 @@ function renderWalkthrough() {
   const panel = document.getElementById('wtDecisionPanel');
 
   if (wtIsComplete(wt.rosters)) {
-    panel.innerHTML = `<div class="final-banner show"><b>Draft complete.</b> Final alliances shown above.</div>`;
+    panel.innerHTML = `<div class="final-banner show"><b>Alliance Selection Complete. Good Luck!</b></div>`;
     return;
   }
 
@@ -869,69 +1261,89 @@ function renderWalkthrough() {
 
     if (!isMine) {
       panel.innerHTML = `
-        <div class="cand-stats-line" style="margin-bottom:10px;">Does <b>${teamId}</b> accept the offer from alliance #${allianceIdx + 1}?</div>
-        ${declineLegal ? '' : '<div class="hint" style="color:var(--accent);">The model treats decline as dominated here (no captain slots left) - but real drafts can deviate, so it is still recorded if you say it happened.</div>'}
+        <div class="decision-header">Does <b>${teamId}</b> accept the offer from alliance #${allianceIdx + 1}?</div>
         <div class="btn-row">
           <button id="wtAccept" class="primary">Accept</button>
-          <button id="wtDecline">Decline${declineLegal ? '' : ' anyway'}</button>
+          <button id="wtDecline">Decline</button>
         </div>`;
       document.getElementById('wtAccept').onclick = () => {
         wtCommit(`${teamId} accepted alliance #${allianceIdx + 1}'s offer.`, wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null);
       };
       document.getElementById('wtDecline').onclick = () => {
         const bl = new Set(wt.blacklist); bl.add(teamId);
-        wtCommit(`${teamId} declined alliance #${allianceIdx + 1}'s offer${declineLegal ? '' : ' (recorded despite model treating it as dominated)'}.`, wt.rosters, bl, null);
+        wtCommit(`${teamId} declined alliance #${allianceIdx + 1}'s offer.`, wt.rosters, bl, null);
       };
     } else {
       const headerText = wt.myTeamId === '__ANY__'
-        ? `Viewing as <b>${teamId}</b>: accept alliance #${allianceIdx + 1}'s offer, or decline?`
+        ? `<b>${teamId}</b>: Accept or Decline?`
         : `It's your call: accept alliance #${allianceIdx + 1}'s offer, or decline?`;
-      panel.innerHTML = `<div class="cand-stats-line" style="margin-bottom:10px;">${headerText}</div>${declineLegal ? '' : '<div class="hint" style="color:var(--accent);">Model treats decline as dominated here (no captain slots left) - EV shown anyway if you want to see it.</div>'}<div id="wtRecommendWrap"></div>`;
+      panel.innerHTML = `<div class="decision-header">${headerText}</div><div id="wtRecommendWrap"></div>`;
       const wrap = document.getElementById('wtRecommendWrap');
-      const acceptState = { ev: null, depth: 0, reason: null, worker: null };
-      const declineState = { ev: null, depth: 0, reason: null, worker: null };
+      const acceptState = { ev: null, status: '', reason: null };
+      const declineState = { ev: null, status: '', reason: null };
+      function statusText(s) { return s.reason === 'memory' ? 'memory' : s.status; }
       function paint() {
         const declineWins = declineState.ev != null && acceptState.ev != null && declineState.ev > acceptState.ev;
         wrap.innerHTML = `
-          <div class="candidates">
-            <div class="cand-card ${!declineWins ? 'leading' : ''}">
-              <div class="ev-row"><span class="ev-value">${acceptState.ev != null ? acceptState.ev.toFixed(3) : '…'}</span><span class="ev-label">Accept ${acceptState.reason ? '(' + acceptState.reason + ')' : '(depth ' + acceptState.depth + ')'}</span></div>
-              <div class="btn-row">
-                <button class="primary" id="wtPickAccept">Choose Accept</button>
-                <button id="wtStopAccept" ${acceptState.reason ? 'disabled' : ''}>Stop</button>
-              </div>
-            </div>
-            <div class="cand-card ${declineWins ? 'leading' : ''}">
-              <div class="ev-row"><span class="ev-value">${declineState.ev != null ? declineState.ev.toFixed(3) : '…'}</span><span class="ev-label">Decline ${declineState.reason ? '(' + declineState.reason + ')' : '(depth ' + declineState.depth + ')'}</span></div>
-              <div class="btn-row">
-                <button id="wtPickDecline">Choose Decline</button>
-                <button id="wtStopDecline" ${declineState.reason ? 'disabled' : ''}>Stop</button>
-              </div>
-            </div>
-          </div>`;
-        document.getElementById('wtPickAccept').onclick = () => {
-          wtCommit(`${teamId} accepted alliance #${allianceIdx + 1}'s offer (EV ${acceptState.ev != null ? acceptState.ev.toFixed(3) : '?'}).`, wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null);
-        };
-        document.getElementById('wtPickDecline').onclick = () => {
-          const bl = new Set(wt.blacklist); bl.add(teamId);
-          wtCommit(`${teamId} declined alliance #${allianceIdx + 1}'s offer (EV ${declineState.ev != null ? declineState.ev.toFixed(3) : '?'}${declineLegal ? '' : ', despite model treating it as dominated'}).`, wt.rosters, bl, null);
-        };
-        if (!acceptState.reason) document.getElementById('wtStopAccept').onclick = () => { if (acceptState.worker) acceptState.worker.terminate(); acceptState.reason = 'stopped'; paint(); };
-        if (!declineState.reason) document.getElementById('wtStopDecline').onclick = () => { if (declineState.worker) declineState.worker.terminate(); declineState.reason = 'stopped'; paint(); };
+          <div class="cand-row">
+            <button type="button" class="cand-box cand-box-btn ${!declineWins ? 'leading' : ''}" data-choice="accept">
+              <span class="cb-ev">${acceptState.ev != null ? acceptState.ev.toFixed(3) : '…'}</span>
+              <div class="cb-status">Accept (${statusText(acceptState)})</div>
+            </button>
+          </div>
+          <div class="cand-row">
+            <button type="button" class="cand-box cand-box-btn ${declineWins ? 'leading' : ''}" data-choice="decline">
+              <span class="cb-ev">${declineState.ev != null ? declineState.ev.toFixed(3) : '…'}</span>
+              <div class="cb-status">Decline (${statusText(declineState)})</div>
+            </button>
+          </div>
+          <button id="wtForceRefresh1" style="width:100%;margin-top:6px;">Refresh</button>`;
+        const refreshBtn = document.getElementById('wtForceRefresh1');
+        if (refreshBtn) refreshBtn.onclick = () => { if (wt.repainter) wt.repainter.flushNow(); };
       }
-      paint();
-      acceptState.worker = wtRunSolver(wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null, teamId, (ev, depth, done, reason) => {
-        if (!done) { acceptState.ev = ev; acceptState.depth = depth; } else acceptState.reason = reason;
-        paint();
-      });
-      // Always compute decline's real EV too, even when the model's internal
-      // pruning would treat it as dominated - that pruning only affects FUTURE
-      // hypothetical picks deep in the recursion, not this top-level query.
-      const bl = new Set(wt.blacklist); bl.add(teamId);
-      declineState.worker = wtRunSolver(wt.rosters, bl, null, teamId, (ev, depth, done, reason) => {
-        if (!done) { declineState.ev = ev; declineState.depth = depth; } else declineState.reason = reason;
-        paint();
-      });
+      wrap.onclick = (e) => {
+        const btn = e.target.closest('[data-choice]');
+        if (!btn) return;
+        if (btn.dataset.choice === 'accept') {
+          wtCommit(`${teamId} accepted alliance #${allianceIdx + 1}'s offer (EV ${acceptState.ev != null ? acceptState.ev.toFixed(3) : '?'}).`, wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null);
+        } else {
+          const bl = new Set(wt.blacklist); bl.add(teamId);
+          wtCommit(`${teamId} declined alliance #${allianceIdx + 1}'s offer (EV ${declineState.ev != null ? declineState.ev.toFixed(3) : '?'}).`, wt.rosters, bl, null);
+        }
+      };
+      wt.repainter = createThrottledPainter(paint);
+      // Alliance 1 is always the last to complete its roster (round 2 runs in
+      // reverse, 8 down to 1) - so its second pick always leads straight to a
+      // finished draft. No search needed: just evaluate the resulting leaf.
+      const isAlliance1FinalPick = (allianceIdx === 0 && wt.rosters[0].length === 2);
+      if (isAlliance1FinalPick) {
+        const finalRosters = wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder);
+        const vec = mtEvaluateLeaf(finalRosters, teams);
+        acceptState.ev = vec[teamId] || 0; acceptState.status = 'trivial'; acceptState.reason = 'exact';
+        wt.repainter.markDirty();
+      } else {
+        wtRunSolver(wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null, teamId, (ev, depth, done, reason, breakdown, status) => {
+          acceptState.ev = ev; acceptState.status = status; if (done) acceptState.reason = reason;
+          wt.repainter.markDirty();
+        });
+      }
+      // Skip the decline worker entirely when declining is trivial (the model
+      // already knows this team can never become a captain again) - there's
+      // no tree worth building, so just label it instead of running one.
+      const declineIsTrivial = mtComputeDeclineTrivial(wt.rosters, teamId, wt.rankOrder);
+      if (declineIsTrivial) {
+        declineState.status = 'trivial'; declineState.reason = 'exact';
+        wt.repainter.markDirty();
+      } else {
+        // Always compute decline's real EV too, even when the model's internal
+        // pruning would treat it as dominated - that pruning only affects FUTURE
+        // hypothetical picks deep in the recursion, not this top-level query.
+        const bl = new Set(wt.blacklist); bl.add(teamId);
+        wtRunSolver(wt.rosters, bl, null, teamId, (ev, depth, done, reason, breakdown, status) => {
+          declineState.ev = ev; declineState.status = status; if (done) declineState.reason = reason;
+          wt.repainter.markDirty();
+        });
+      }
     }
     return;
   }
@@ -947,14 +1359,13 @@ function renderWalkthrough() {
   function manualPickerHtml(idPrefix) {
     const options = allAvailable.map(t => `<option value="${t.id}">${t.id} (mean ${t.mean})</option>`).join('');
     return `
-      <div class="hint" style="margin-top:12px;margin-bottom:6px;">Real captains can pick anyone, not just the model's top options — use this if that's what actually happened:</div>
-      <select id="${idPrefix}Select" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;">${options}</select>
+      <select id="${idPrefix}Select" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;margin-top:10px;min-height:44px;">${options}</select>
       <button id="${idPrefix}Confirm" style="width:100%;">Record this pick</button>`;
   }
 
   if (!isMine) {
     panel.innerHTML = `
-      <div class="cand-stats-line" style="margin-bottom:10px;">Who does alliance #${capIdx + 1} (captain ${capTeamId}) choose?</div>
+      <div class="decision-header">Who does alliance #${capIdx + 1} (captain ${capTeamId}) choose?</div>
       <div class="btn-row" id="wtOfferChoices"></div>
       ${manualPickerHtml('wtManualOffer')}`;
     const row = document.getElementById('wtOfferChoices');
@@ -972,63 +1383,110 @@ function renderWalkthrough() {
     };
   } else {
     const headerText = wt.myTeamId === '__ANY__'
-      ? `Viewing as alliance #${capIdx + 1} captain (${capTeamId}): who do they offer?`
+      ? `Alliance #${capIdx + 1} captain (${capTeamId}):`
       : `Your call as alliance #${capIdx + 1} captain: who do you offer?`;
-    panel.innerHTML = `<div class="cand-stats-line" style="margin-bottom:10px;">${headerText}</div><div id="wtOfferRecommendWrap" class="candidates"></div>${manualPickerHtml('wtManualOfferMine')}`;
+    panel.innerHTML = `<div class="decision-header">${headerText}</div><div id="wtOfferRecommendWrap"></div>${manualPickerHtml('wtManualOfferMine')}`;
     const wrap = document.getElementById('wtOfferRecommendWrap');
-    const candStates = candidates.map(c => ({ id: c.id, mean: c.mean, ev: null, depth: 0, reason: null, worker: null }));
+    const candStates = candidates.map(c => ({ id: c.id, mean: c.mean, ev: null, status: '', reason: null }));
+    function statusText(cs) { return cs.reason === 'memory' ? 'memory' : cs.status; }
+    function declineText(cs, field) {
+      if (cs.declineTrivial) return '-----';
+      const v = cs[field];
+      if (v === undefined) return '…';
+      if (v === null) return '-----';
+      return v.toFixed(3);
+    }
     function paint() {
       const bestEv = Math.max(...candStates.map(cs => cs.ev != null ? cs.ev : -Infinity));
       wrap.innerHTML = candStates.map((cs, i) => `
-        <div class="cand-card ${cs.ev != null && cs.ev === bestEv ? 'leading' : ''}">
-          <div class="cand-header"><span class="cand-team">${cs.id}</span><span class="cand-stats-line">mean ${cs.mean}</span></div>
-          <div class="ev-row"><span class="ev-value">${cs.ev != null ? cs.ev.toFixed(3) : '…'}</span><span class="ev-label">${cs.reason ? cs.reason : 'depth ' + cs.depth}</span></div>
-          <div class="cand-stats-line" style="margin-bottom:10px;">
-            if they accept, your EV: ${cs.myEvIfAccept != null ? cs.myEvIfAccept.toFixed(3) : '…'} &nbsp;·&nbsp;
-            if they decline, your EV: ${cs.myEvIfDecline != null ? cs.myEvIfDecline.toFixed(3) : '…'}<br>
-            ${cs.id}'s own EV if they accept: ${cs.candEvIfAccept != null ? cs.candEvIfAccept.toFixed(3) : '…'} &nbsp;·&nbsp;
-            if they decline: ${cs.candEvIfDecline != null ? cs.candEvIfDecline.toFixed(3) : '…'}
-          </div>
-          <div class="btn-row">
-            <button class="primary" id="wtPickOffer${i}">Offer to ${cs.id}</button>
-            <button id="wtStopOffer${i}" ${cs.reason ? 'disabled' : ''}>Stop</button>
-          </div>
-        </div>`).join('');
-      candStates.forEach((cs, i) => {
-        document.getElementById('wtPickOffer' + i).onclick = () => {
-          wtCommit(`You (alliance #${capIdx + 1}, ${capTeamId}) offered ${cs.id} (EV ${cs.ev != null ? cs.ev.toFixed(3) : '?'}).`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: cs.id });
-        };
-        const stopBtn = document.getElementById('wtStopOffer' + i);
-        if (stopBtn && !cs.reason) {
-          stopBtn.onclick = () => { if (cs.worker) cs.worker.terminate(); cs.reason = 'stopped'; paint(); };
-        }
-      });
+        <div class="cand-row">
+          <button type="button" class="cand-box cand-box-btn ${cs.ev != null && cs.ev === bestEv ? 'leading' : ''}" data-pick-index="${i}">
+            <div class="cand-box-flex">
+              <div class="cb-left">
+                <span><span class="cb-team">${cs.id}</span> <span class="cb-mean">${cs.mean}</span></span>
+                <span class="cb-ev">${cs.ev != null ? cs.ev.toFixed(3) : '…'}</span>
+                <span class="cb-status">${statusText(cs)}</span>
+              </div>
+              <div class="cb-right">
+                <span class="cb-green">${cs.myEvIfAccept != null ? cs.myEvIfAccept.toFixed(3) : '…'}</span>
+                <span class="cb-red">${declineText(cs, 'myEvIfDecline')}</span>
+                <span class="cb-blue">${cs.candEvIfAccept != null ? cs.candEvIfAccept.toFixed(3) : '…'}</span>
+                <span class="cb-yellow">${declineText(cs, 'candEvIfDecline')}</span>
+              </div>
+            </div>
+          </button>
+        </div>`).join('') +
+        `<button id="wtForceRefresh2" style="width:100%;margin-top:6px;">Refresh</button>`;
+      const refreshBtn = document.getElementById('wtForceRefresh2');
+      if (refreshBtn) refreshBtn.onclick = () => { if (wt.repainter) wt.repainter.flushNow(); };
     }
-    paint();
+    // Event delegation on the stable wrap: since repaints are now throttled
+    // (not fired on every solver tick), the card's geometry stays fixed for
+    // the whole interval between repaints, so making the card itself the tap
+    // target no longer risks a mid-tap reflow cancelling the gesture.
+    wrap.onclick = (e) => {
+      const btn = e.target.closest('[data-pick-index]');
+      if (!btn) return;
+      const cs = candStates[+btn.dataset.pickIndex];
+      wtCommit(`You (alliance #${capIdx + 1}, ${capTeamId}) offered ${cs.id} (EV ${cs.ev != null ? cs.ev.toFixed(3) : '?'}).`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: cs.id });
+    };
     document.getElementById('wtManualOfferMineConfirm').onclick = () => {
       const picked = document.getElementById('wtManualOfferMineSelect').value;
       wtCommit(`You (alliance #${capIdx + 1}, ${capTeamId}) offered ${picked} (manual override - no EV computed for this choice).`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: picked });
     };
+    wt.repainter = createThrottledPainter(paint);
+    // Alliance 1 is always last to complete its roster (round 2 runs in
+    // reverse, 8 down to 1) - so its second pick always leads straight to a
+    // finished draft, for any candidate. No search needed: just evaluate the
+    // resulting leaf directly for each candidate.
+    const isAlliance1FinalPick = (capIdx === 0 && wt.rosters[0].length === 2);
     candidates.forEach((c, i) => {
-      candStates[i].worker = wtRunSolver(wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: c.id }, capTeamId, (ev, depth, done, reason, breakdown) => {
-        if (!done) {
-          candStates[i].ev = ev; candStates[i].depth = depth;
-          if (breakdown) {
-            candStates[i].myEvIfAccept = breakdown.myEvIfAccept; candStates[i].myEvIfDecline = breakdown.myEvIfDecline;
-            candStates[i].candEvIfAccept = breakdown.candidateEvIfAccept; candStates[i].candEvIfDecline = breakdown.candidateEvIfDecline;
-          }
-        } else candStates[i].reason = reason;
-        paint();
+      if (isAlliance1FinalPick) {
+        const finalRosters = wtApplyAccept(wt.rosters, capIdx, c.id, wt.rankOrder);
+        const vec = mtEvaluateLeaf(finalRosters, teams);
+        candStates[i].ev = vec[capTeamId] || 0;
+        candStates[i].status = 'trivial';
+        candStates[i].reason = 'exact';
+        candStates[i].myEvIfAccept = vec[capTeamId] || 0;
+        candStates[i].candEvIfAccept = vec[c.id] || 0;
+        candStates[i].myEvIfDecline = null;
+        candStates[i].candEvIfDecline = null;
+        candStates[i].declineTrivial = true;
+        wt.repainter.markDirty();
+        return;
+      }
+      wtRunSolver(wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: c.id }, capTeamId, (ev, depth, done, reason, breakdown, status) => {
+        candStates[i].ev = ev; candStates[i].status = status;
+        if (breakdown) {
+          candStates[i].myEvIfAccept = breakdown.myEvIfAccept; candStates[i].myEvIfDecline = breakdown.myEvIfDecline;
+          candStates[i].candEvIfAccept = breakdown.candidateEvIfAccept; candStates[i].candEvIfDecline = breakdown.candidateEvIfDecline;
+          candStates[i].declineTrivial = breakdown.declineTrivial;
+        }
+        if (done) candStates[i].reason = reason;
+        wt.repainter.markDirty();
       });
     });
   }
 }
 
-document.getElementById('btnStartWalkthrough').onclick = () => {
+document.getElementById('btnStartWalkthrough').onclick = async () => {
+  const apiKey = document.getElementById('tbaKey').value.trim();
+  const eventKey = document.getElementById('tbaEvent').value.trim();
+  const startBtn = document.getElementById('btnStartWalkthrough');
+  if (apiKey && eventKey) {
+    startBtn.disabled = true;
+    startBtn.textContent = 'Importing…';
+    try { await importFromTBA(); } catch (e) { /* silently continue with existing team data on failure */ }
+    startBtn.disabled = false;
+    startBtn.textContent = 'Start walkthrough \u2192';
+  }
+  // Read the selection AFTER any re-import, since a successful import replaces
+  // team IDs entirely (real TBA numbers vs. randomized ones) - a choice made
+  // before import could point at a team that no longer exists.
   const myTeamId = document.getElementById('wtTeamSelect').value;
   document.getElementById('setupPanels').style.display = 'none';
   document.getElementById('walkthroughPanel').style.display = 'block';
-  document.getElementById('topSubtitle').textContent = 'Step through the real draft — recommended by EV whenever it\u2019s your call.';
+  document.getElementById('topSubtitle').textContent = '';
   initWalkthroughFromData(teams, myTeamId);
 };
 
