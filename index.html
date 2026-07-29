@@ -134,7 +134,7 @@
 </head>
 <body>
 
-<h1>Alliance <span>Engine v5.2</span></h1>
+<h1>Alliance <span>Engine v5.3</span></h1>
 <div class="subtitle" id="topSubtitle"></div>
 
 <div id="setupPanels">
@@ -276,7 +276,7 @@ const OFFER_BRANCH = 3;
 
 function buildSolver(teams, numAlliances) {
   const MEMO_CAP = 100; // recalibrated after real-device trial: phone crashed (OOM reload) around depth.width 10.4.5 with caps disabled; restored below the original 40000 with extra margin
-  const NODE_CAP = 100000; // the search now stops immediately on hitting this cap - a smaller cap directly bounds the worst-case single-round cost too, since rounds get more expensive as the tree grows toward it
+  const NODE_CAP = 50000; // the search now stops immediately on hitting this cap - a smaller cap directly bounds the worst-case single-round cost too, since rounds get more expensive as the tree grows toward it
   teams = teams.slice();
   const byId = new Map(teams.map(t => [t.id, t]));
   const rankOrder = teams.slice().sort((a, b) => a.qualRank - b.qualRank); // captain order = qual rank, NOT mean power
