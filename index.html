@@ -134,7 +134,7 @@
 </head>
 <body>
 
-<h1>Alliance <span>Engine</span></h1>
+<h1>Alliance <span>Engine v1</span></h1>
 <div class="subtitle" id="topSubtitle"></div>
 
 <div id="setupPanels">
@@ -1377,7 +1377,7 @@ function initWalkthroughFromData(teamsData, myTeamId) {
     myTeamId, rankOrder, history: [], activeWorkers: [], snapshots: [],
     numAlliances: computeNumAlliances(teams),
   };
-  document.getElementById('wtWhoAmI').textContent = myTeamId === '__ANY__' ? 'Viewing every team\u2019s perspective' : `You are ${myTeamId}`;
+  document.getElementById('wtWhoAmI').textContent = myTeamId === '__ANY__' ? 'Viewing as every team' : `Viewing as ${myTeamId}`;
   renderWalkthrough();
 }
 
