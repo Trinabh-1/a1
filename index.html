@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>Alliance Selection Walkthrough</title>
+<title>Alliance Engine</title>
 <style>
   :root {
     --bg: #0b0d10;
@@ -59,7 +59,8 @@
     padding: 11px 12px; cursor: pointer; transition: all 0.15s;
     min-height: 44px; -webkit-appearance: none; touch-action: manipulation;
   }
-  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:hover:not(.choice-btn):not(.cand-box-btn) { border-color: var(--accent); color: var(--accent); }
+  .choice-btn:hover { border-color: #3a4149; color: var(--text); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #1a0d05; }
   button.primary:hover { background: #ff8f5c; color: #1a0d05; }
@@ -80,7 +81,8 @@
     width: 100%; min-height: 0; font-weight: normal; cursor: pointer;
     -webkit-appearance: none; appearance: none;
   }
-  .cand-box-btn:hover { border-color: var(--accent); color: var(--text); }
+  .cand-box-btn:hover { border-color: #3a4149; color: var(--text); }
+  .cand-box-btn.leading:hover { border-color: var(--accent2); }
   .cand-box-btn:active { background: #20262d; }
   .cand-box-flex { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .cb-left { display: flex; flex-direction: column; justify-content: space-between; gap: 2px; min-height: 68px; }
@@ -132,7 +134,7 @@
 </head>
 <body>
 
-<h1>Alliance Selection <span>Solver</span></h1>
+<h1>Alliance <span>Engine</span></h1>
 <div class="subtitle" id="topSubtitle"></div>
 
 <div id="setupPanels">
@@ -211,11 +213,21 @@ BRACKET_MATCHES.forEach((m, i) => { MATCH_INDEX[m.id] = i; });
 const M11_IDX = MATCH_INDEX['M11'], M13_IDX = MATCH_INDEX['M13'], M12_IDX = MATCH_INDEX['M12'];
 const NUM_MATCHES = BRACKET_MATCHES.length;
 
-function bracketEV(meanArr, varArr) {
+// numAlliances: the bracket SHAPE (Figure 11-3) never changes - per the FRC
+// game manual, events with fewer than 8 alliances "remain as shown in
+// Figure 11-3, with any matchup against a non-existent ALLIANCE resulting
+// in a bye (i.e. automatic advancement)". So seeds 0..numAlliances-1 exist
+// and play real matches; seeds numAlliances..7 are phantom slots that never
+// actually take the field - any match involving a phantom seed auto-resolves
+// to the real side with probability 1 (no coin flip), and a match between
+// two phantom seeds is just bookkeeping (its "winner" is never a real
+// alliance, so it never affects anyone's EV downstream).
+function bracketEV(meanArr, varArr, numAlliances) {
   const redOf = new Int8Array(NUM_MATCHES);
   const blueOf = new Int8Array(NUM_MATCHES);
   const winnerOf = new Int8Array(NUM_MATCHES);
   const value = new Array(8).fill(0);
+  function isReal(seed) { return seed < numAlliances; }
   function resolve(ref) {
     if (ref.t === 'seed') return ref.s;
     const idx = MATCH_INDEX[ref.m];
@@ -227,19 +239,30 @@ function bracketEV(meanArr, varArr) {
     if (pos === NUM_MATCHES) {
       const loserM12 = winnerOf[M12_IDX] === redOf[M12_IDX] ? blueOf[M12_IDX] : redOf[M12_IDX];
       const loserM13 = winnerOf[M13_IDX] === redOf[M13_IDX] ? blueOf[M13_IDX] : redOf[M13_IDX];
-      value[loserM12] += prob * 7;
-      value[loserM13] += prob * 13;
+      if (isReal(loserM12)) value[loserM12] += prob * 7;
+      if (isReal(loserM13)) value[loserM13] += prob * 13;
       const m11w = winnerOf[M11_IDX], m13w = winnerOf[M13_IDX];
-      const p = winProb(meanArr[m11w], varArr[m11w], meanArr[m13w], varArr[m13w]);
-      const pSweepM11 = p * p, p3M11 = 2 * p * p * (1 - p);
-      const pSweepM13 = (1 - p) * (1 - p), p3M13 = 2 * (1 - p) * (1 - p) * p;
-      value[m11w] += prob * ((pSweepM11 + p3M11) * 30 + pSweepM13 * 20 + p3M13 * 25);
-      value[m13w] += prob * ((pSweepM13 + p3M13) * 30 + pSweepM11 * 20 + p3M11 * 25);
+      const m11Real = isReal(m11w), m13Real = isReal(m13w);
+      if (m11Real && m13Real) {
+        const p = winProb(meanArr[m11w], varArr[m11w], meanArr[m13w], varArr[m13w]);
+        const pSweepM11 = p * p, p3M11 = 2 * p * p * (1 - p);
+        const pSweepM13 = (1 - p) * (1 - p), p3M13 = 2 * (1 - p) * (1 - p) * p;
+        value[m11w] += prob * ((pSweepM11 + p3M11) * 30 + pSweepM13 * 20 + p3M13 * 25);
+        value[m13w] += prob * ((pSweepM13 + p3M13) * 30 + pSweepM11 * 20 + p3M11 * 25);
+      } else if (m11Real) {
+        value[m11w] += prob * 30; // finals bye: real finalist auto-wins, full 1st-place points
+      } else if (m13Real) {
+        value[m13w] += prob * 30;
+      }
       return;
     }
     const match = BRACKET_MATCHES[pos];
     const red = resolve(match.red), blue = resolve(match.blue);
     redOf[pos] = red; blueOf[pos] = blue;
+    const redReal = isReal(red), blueReal = isReal(blue);
+    if (redReal && !blueReal) { winnerOf[pos] = red; recurse(pos + 1, prob); return; }
+    if (!redReal && blueReal) { winnerOf[pos] = blue; recurse(pos + 1, prob); return; }
+    if (!redReal && !blueReal) { winnerOf[pos] = red; recurse(pos + 1, prob); return; }
     const pRed = winProb(meanArr[red], varArr[red], meanArr[blue], varArr[blue]);
     winnerOf[pos] = red;  recurse(pos + 1, prob * pRed);
     winnerOf[pos] = blue; recurse(pos + 1, prob * (1 - pRed));
@@ -251,9 +274,9 @@ function bracketEV(meanArr, varArr) {
 const TEAMS_PER_ALLIANCE = 3;
 const OFFER_BRANCH = 3;
 
-function buildSolver(teams) {
-  const MEMO_CAP = Infinity; // TEMPORARILY disabled for real-device trial run - was 40000, will recalibrate once you report where it actually crashes
-  const NODE_CAP = Infinity; // TEMPORARILY disabled for real-device trial run - was 150000, same recalibration plan
+function buildSolver(teams, numAlliances) {
+  const MEMO_CAP = 30000; // recalibrated after real-device trial: phone crashed (OOM reload) around depth.width 10.4.5 with caps disabled; restored below the original 40000 with extra margin
+  const NODE_CAP = 100000; // recalibrated after real-device trial: restored below the original 150000 with extra margin, since the tree (not the leaf memo) is what grows unbounded and caused the crash
   teams = teams.slice();
   const byId = new Map(teams.map(t => [t.id, t]));
   const rankOrder = teams.slice().sort((a, b) => a.qualRank - b.qualRank); // captain order = qual rank, NOT mean power
@@ -262,13 +285,13 @@ function buildSolver(teams) {
 
   function rosterKey(r) { return r[0] + ':' + r.slice(1).slice().sort().join(','); }
   function fullSignature(rosters) { return rosters.map(rosterKey).join('|'); }
-  function isComplete(rosters) { return rosters.length === 8 && rosters.every(r => r.length === TEAMS_PER_ALLIANCE); }
+  function isComplete(rosters) { return rosters.length === numAlliances && rosters.every(r => r.length === TEAMS_PER_ALLIANCE); }
 
   function getActiveAllianceIdx(rosters) {
     const k = rosters.length;
-    if (k < 8) return k - 1;
-    if (rosters[7].length < 2) return 7;
-    for (let i = 7; i >= 0; i--) if (rosters[i].length < TEAMS_PER_ALLIANCE) return i;
+    if (k < numAlliances) return k - 1;
+    if (rosters[numAlliances - 1].length < 2) return numAlliances - 1;
+    for (let i = numAlliances - 1; i >= 0; i--) if (rosters[i].length < TEAMS_PER_ALLIANCE) return i;
     return -1;
   }
   function getAvailable(rosters, blacklist) {
@@ -286,14 +309,14 @@ function buildSolver(teams) {
   function applyAccept(rosters, allianceIdx, teamId) {
     const wasFirstPick = rosters[allianceIdx].length === 1;
     const newRosters = rosters.map((r, i) => i === allianceIdx ? [...r, teamId] : r);
-    if (wasFirstPick && newRosters.length < 8) {
+    if (wasFirstPick && newRosters.length < numAlliances) {
       const nextCap = nextCaptainCandidate(newRosters);
       if (nextCap) newRosters.push([nextCap.id]);
     }
     return newRosters;
   }
 
-  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, inherited: 0, memoCapHit: false, widenEvents: 0 };
+  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, inherited: 0, frozen: false, widenEvents: 0, ephemeralNodes: 0 };
 
   function evaluateLeaf(rosters) {
     const key = fullSignature(rosters);
@@ -306,7 +329,7 @@ function buildSolver(teams) {
       for (const tid of rosters[i]) { const t = byId.get(tid); m += t.mean; v += t.variance; }
       meanArr[i] = m; varArr[i] = v;
     }
-    const allianceVals = bracketEV(meanArr, varArr);
+    const allianceVals = bracketEV(meanArr, varArr, numAlliances);
     const vec = {};
     for (let i = 0; i < rosters.length; i++) {
       const allianceNumber = i + 1, capFirstPts = 17 - allianceNumber, secondPts = allianceNumber;
@@ -316,8 +339,12 @@ function buildSolver(teams) {
       if (roster[2] != null) vec[roster[2]] = allianceVals[i] + secondPts;
     }
     for (const t of teams) if (!(t.id in vec)) vec[t.id] = 0;
-    if (trueLeafMemo.size > MEMO_CAP) stats.memoCapHit = true;
-    else trueLeafMemo.set(key, vec);
+    // Once the leaf-memo cap is hit, simply stop CACHING further leaves -
+    // don't force the whole search to stop. This just means some leaf
+    // evaluations that would've been cache hits get recomputed from
+    // scratch instead (bracketEV is a cheap-ish DP, not free, so this costs
+    // real time) - but memory for the memo map itself stays flat forever.
+    if (trueLeafMemo.size < MEMO_CAP) trueLeafMemo.set(key, vec);
     return vec;
   }
 
@@ -342,10 +369,52 @@ function buildSolver(teams) {
     };
   }
 
-  let checkCounter = 0;
-  class MemoCapExceeded extends Error {}
-  function checkMemoCap() {
-    if (stats.memoCapHit && (++checkCounter & 0xFFF) === 0) throw new MemoCapExceeded();
+  // Once the persistent tree hits NODE_CAP, we stop creating new REAL
+  // (retained) nodes - stats.realNodes is frozen at that point forever.
+  // But that doesn't mean the search has to stop: any node that would have
+  // become a new real node instead gets its value refined by a fully
+  // real-branching search that is NEVER attached to the persistent tree -
+  // just plain recursive function calls, whose stack frames (and every
+  // object they touch) are eligible for GC the moment the call returns.
+  // This is classic time/space-tradeoff iterative-deepening: no
+  // memoization or retained structure beyond this one call, so depth can
+  // keep climbing forever with flat memory, at the cost of redoing shallow
+  // work from scratch every round instead of reusing it like the
+  // persistent tree does. Leaf evaluations still benefit from trueLeafMemo
+  // (until IT also caps out, per evaluateLeaf above).
+  function ephemeralValue(rosters, blacklist, pendingOffer, depthBudget, depthFromRoot) {
+    stats.ephemeralNodes++;
+    if (pendingOffer) {
+      const { allianceIdx, teamId } = pendingOffer;
+      const acceptRosters = applyAccept(rosters, allianceIdx, teamId);
+      const acceptVal = isComplete(acceptRosters) ? evaluateLeaf(acceptRosters)
+        : (depthBudget === 0 ? rollout(acceptRosters, blacklist) : ephemeralValue(acceptRosters, blacklist, null, depthBudget - 1, depthFromRoot + 1));
+      const captainSlotsRemaining = numAlliances - rosters.length;
+      if (captainSlotsRemaining <= 0) return acceptVal;
+      const declineBlacklist = new Set(blacklist); declineBlacklist.add(teamId);
+      const declineVal = depthBudget === 0 ? rollout(rosters, declineBlacklist) : ephemeralValue(rosters, declineBlacklist, null, depthBudget - 1, depthFromRoot + 1);
+      if ((declineVal[teamId] || 0) > (acceptVal[teamId] || 0)) {
+        const out = {};
+        for (const k in declineVal) out[k] = 0.99 * declineVal[k];
+        for (const k in acceptVal) out[k] = (out[k] || 0) + 0.01 * acceptVal[k];
+        return out;
+      }
+      return acceptVal;
+    }
+    if (isComplete(rosters)) return evaluateLeaf(rosters);
+    if (depthBudget === 0) return rollout(rosters, blacklist);
+    const capIdx = getActiveAllianceIdx(rosters);
+    const capTeamId = rosters[capIdx][0];
+    const width = widthByLevel.get(depthFromRoot) || OFFER_BRANCH;
+    const candidates = getAvailable(rosters, blacklist).slice(0, width);
+    if (candidates.length === 0) return evaluateLeaf(rosters);
+    let bestVal = -Infinity, bestVec = null;
+    for (const cand of candidates) {
+      const v = ephemeralValue(rosters, blacklist, { allianceIdx: capIdx, teamId: cand.id }, depthBudget - 1, depthFromRoot + 1);
+      const score = v[capTeamId] || 0;
+      if (score > bestVal) { bestVal = score; bestVec = v; }
+    }
+    return bestVec;
   }
 
   function mergeOfferNode(node) {
@@ -359,7 +428,6 @@ function buildSolver(teams) {
   }
 
   function ensureDepth(node, depthBudget) {
-    checkMemoCap();
     if (node.kind === 'leaf') {
       if (node.value === null) node.value = evaluateLeaf(node.rosters);
       node.isFrontier = false;
@@ -375,8 +443,15 @@ function buildSolver(teams) {
     }
     const wasFrontier = node.isFrontier;
     if (node.children === null) {
+      if (stats.frozen) {
+        // Tree growth is capped - refine this frontier node's value with a
+        // throwaway real-branching search instead of persisting more nodes.
+        node.value = ephemeralValue(node.rosters, node.blacklist, node.pendingOffer, depthBudget, node.depthFromRoot);
+        node.isFrontier = true;
+        return;
+      }
       stats.realNodes++;
-      if (stats.realNodes > NODE_CAP) stats.memoCapHit = true;
+      if (stats.realNodes >= NODE_CAP) stats.frozen = true;
       if (node.kind === 'offer') {
         const capIdx = getActiveAllianceIdx(node.rosters);
         const capTeamId = node.rosters[capIdx][0];
@@ -402,7 +477,7 @@ function buildSolver(teams) {
         const acceptChild = makeNode(acceptRosters, node.blacklist, null, node.depthFromRoot + 1);
         if (wasFrontier) { acceptChild.value = node.value; acceptChild.isFrontier = true; stats.inherited++; }
         ensureDepth(acceptChild, depthBudget - 1);
-        const captainSlotsRemaining = 8 - node.rosters.length;
+        const captainSlotsRemaining = numAlliances - node.rosters.length;
         let declineChild = null;
         if (captainSlotsRemaining > 0) {
           const declineBlacklist = new Set(node.blacklist); declineBlacklist.add(teamId);
@@ -437,14 +512,25 @@ function buildSolver(teams) {
     }
   }
 
-  // Finds the max depthFromRoot among currently-REAL offer nodes (children
-  // !== null) - the deepest level worth widening right now.
-  function findMaxRealOfferDepth(node) {
-    if (!node || node.kind === 'leaf') return -1;
-    let max = -1;
-    if (node.kind === 'offer' && node.children !== null) max = node.depthFromRoot;
-    if (node.children) for (const child of node.children) max = Math.max(max, findMaxRealOfferDepth(child));
-    return max;
+  // Finds every depthFromRoot where a real (children !== null) offer node
+  // currently exists, mapped to the ACTUAL smallest children.length seen
+  // there - not the widthByLevel target, since availability limits can
+  // make a level's real width fall short of its target (common near the
+  // end of the draft, where few candidates remain). Using the MINIMUM
+  // (not max) across nodes at that depth matters: different branches at
+  // the same depth can have different actual widths depending on
+  // path-specific availability, and a wider sibling shouldn't hide a
+  // still-starved node elsewhere at that same depth.
+  function collectRealOfferLevels(node, out) {
+    out = out || new Map();
+    if (!node || node.kind === 'leaf') return out;
+    if (node.kind === 'offer' && node.children !== null) {
+      const w = node.children.length;
+      const prev = out.get(node.depthFromRoot);
+      if (prev === undefined || w < prev) out.set(node.depthFromRoot, w);
+    }
+    if (node.children) for (const child of node.children) collectRealOfferLevels(child, out);
+    return out;
   }
 
   // Widens all real offer nodes at exactly targetLevel to widthByLevel.get(targetLevel)
@@ -476,7 +562,7 @@ function buildSolver(teams) {
     }
   }
 
-  return { rankOrder, teams, stats, ensureDepth, makeNode, MemoCapExceeded, widthByLevel, findMaxRealOfferDepth, widenAtLevel };
+  return { rankOrder, teams, stats, ensureDepth, makeNode, widthByLevel, collectRealOfferLevels, widenAtLevel };
 }
 
 // A node still needs real expansion if it's a non-leaf with no children yet
@@ -495,8 +581,8 @@ function countFrontier(node) {
 // pendingOffer) and which team's EV to track - works for ANY decision point
 // in the draft, not just captain 1's opening pick.
 self.onmessage = function(e) {
-  const { teams, rosters, blacklist, pendingOffer, myTeamId } = e.data;
-  const solver = buildSolver(teams);
+  const { teams, rosters, blacklist, pendingOffer, myTeamId, numAlliances } = e.data;
+  const solver = buildSolver(teams, numAlliances);
   const node = solver.makeNode(rosters, new Set(blacklist), pendingOffer || null, 0);
   const t0 = Date.now();
 
@@ -504,11 +590,28 @@ self.onmessage = function(e) {
   let depth = 1;
   let mode = 'deepen';
   let evHistory = [];
-  let widenSweepLevel = null;
-  let currentWidenTarget = OFFER_BRANCH;
+  let widenProcessedThisPass = null; // Set of offer-levels already widened this pass
   let widenEventsAtSweepStart = 0;
   let widenCycles = 0; // how many times we've entered widen mode - first cycle needs 4 plateaued rounds, every cycle after needs only 3
   let lastPostTime = 0;
+  // Picks which level to widen next within the current pass: the level
+  // with the SMALLEST actual current width (the one captains are seeing
+  // the fewest real options at) among levels not yet touched this pass,
+  // ties broken by the DEEPEST such level. Actual width (not the
+  // widthByLevel target) is what matters, since a level can already be
+  // short of its target purely from running out of available candidates -
+  // re-measured fresh every round (not just once per pass) so newly
+  // appeared offer levels (a side effect of widening adding deeper real
+  // branches) are naturally picked up instead of missed by a stale list.
+  function pickNextWidenLevel() {
+    const levels = solver.collectRealOfferLevels(node);
+    let best = null, bestWidth = Infinity;
+    for (const [lvl, w] of levels) {
+      if (widenProcessedThisPass.has(lvl)) continue;
+      if (w < bestWidth || (w === bestWidth && lvl > best)) { bestWidth = w; best = lvl; }
+    }
+    return { level: best, width: best === null ? null : levels.get(best) };
+  }
   // Once frontierCount genuinely hits 0, depth has reached its TRUE
   // structural maximum for this query - there is no more real depth to
   // explore, ever, regardless of what happens afterward. Without this flag,
@@ -521,7 +624,7 @@ self.onmessage = function(e) {
   let depthIsFinal = false;
 
   function plateaued() {
-    const threshold = widenCycles === 0 ? 4 : 3;
+    const threshold = widenCycles === 0 ? 3 : 2;
     if (evHistory.length < threshold) return false;
     const last = evHistory.slice(-threshold);
     return (Math.max(...last) - Math.min(...last)) < EPS;
@@ -546,7 +649,7 @@ self.onmessage = function(e) {
   //  offers/accepts that clears a captaincy path for this team - not
   //  trivial, however unlikely in practice.
   function computeDeclineTrivial(rosters, teamId) {
-    const C = 8 - rosters.length;
+    const C = numAlliances - rosters.length;
     if (C === 0) return true;
     const rostered = new Set(rosters.flat());
     const myRankIdx = solver.rankOrder.findIndex(t => t.id === teamId);
@@ -593,16 +696,15 @@ self.onmessage = function(e) {
 
   while (true) {
     const roundStart = Date.now();
-    try {
-      if (mode === 'deepen') {
-        solver.ensureDepth(node, depth);
-      } else {
-        solver.widthByLevel.set(widenSweepLevel, currentWidenTarget);
-        solver.widenAtLevel(node, widenSweepLevel);
-      }
-    } catch (err) {
-      if (err instanceof solver.MemoCapExceeded) { postDone('memory'); return; }
-      throw err;
+    let widenLevelThisRound = null;
+    if (mode === 'deepen') {
+      solver.ensureDepth(node, depth);
+    } else {
+      const picked = pickNextWidenLevel();
+      widenLevelThisRound = picked.level;
+      const newWidth = picked.width + 1;
+      solver.widthByLevel.set(widenLevelThisRound, newWidth);
+      solver.widenAtLevel(node, widenLevelThisRound);
     }
     const roundMs = Date.now() - roundStart;
     const cumMs = Date.now() - t0;
@@ -632,7 +734,6 @@ self.onmessage = function(e) {
       });
     }
 
-    if (solver.stats.memoCapHit) { postDone('memory'); return; }
     if (node.kind === 'leaf' && depth >= 1) { postDone('exact'); return; }
 
     if (mode === 'deepen') {
@@ -642,8 +743,8 @@ self.onmessage = function(e) {
       // keep increasing, so treat it exactly like a plateau: start widening.
       if (frontierCount === 0) depthIsFinal = true; // permanent - depth never moves again after this
       if (frontierCount === 0 || plateaued()) {
-        widenSweepLevel = solver.findMaxRealOfferDepth(node);
-        if (widenSweepLevel < 0) {
+        const levels = solver.collectRealOfferLevels(node);
+        if (levels.size === 0) {
           if (frontierCount === 0) {
             // No offer-type node exists ANYWHERE in this tree, AND there's no
             // remaining depth either - genuinely nothing left in either
@@ -663,7 +764,7 @@ self.onmessage = function(e) {
           depth++;
         } else {
           mode = 'widen';
-          currentWidenTarget += 1;
+          widenProcessedThisPass = new Set();
           widenEventsAtSweepStart = solver.stats.widenEvents;
           widenCycles++;
           evHistory = [];
@@ -672,21 +773,23 @@ self.onmessage = function(e) {
         depth++;
       }
     } else {
-      widenSweepLevel -= 1;
-      if (widenSweepLevel < 0) {
-        // Sweep complete. Only genuinely nothing left to explore if BOTH
-        // directions are exhausted: the sweep added no new candidates
-        // anywhere AND there's no remaining depth to explore either
-        // (frontierCount===0). A plateau can trigger a widen sweep well
-        // before the tree is actually fully deepened - if that sweep adds
-        // nothing (the levels explored so far already have their natural
-        // max candidates) but frontierCount is still > 0, there is real,
-        // unexplored depth beyond what's been reached - resume deepening
-        // instead of wrongly declaring total exhaustion.
+      widenProcessedThisPass.add(widenLevelThisRound);
+      const remaining = pickNextWidenLevel();
+      if (remaining.level === null) {
+        // Pass complete (every currently-known offer level touched once).
+        // Only genuinely nothing left to explore if BOTH directions are
+        // exhausted: the pass added no new candidates anywhere AND there's
+        // no remaining depth to explore either (frontierCount===0). A
+        // plateau can trigger a widen pass well before the tree is
+        // actually fully deepened - if that pass adds nothing (the levels
+        // explored so far already have their natural max candidates) but
+        // frontierCount is still > 0, there is real, unexplored depth
+        // beyond what's been reached - resume deepening instead of
+        // wrongly declaring total exhaustion.
         const sweepAddedNothing = solver.stats.widenEvents === widenEventsAtSweepStart;
         if (sweepAddedNothing && frontierCount === 0) { postDone('exhausted'); return; }
         mode = 'deepen';
-        if (!depthIsFinal) depth++; // only advance depth if the tree hasn't ALREADY hit its true bottom - a successful widen sweep after that point explored more width, not more depth, so depth must not move
+        if (!depthIsFinal) depth++; // only advance depth if the tree hasn't ALREADY hit its true bottom - a successful widen pass after that point explored more width, not more depth, so depth must not move
       }
     }
   }
@@ -755,9 +858,10 @@ const MT_MATCH_INDEX = {};
 MT_BRACKET_MATCHES.forEach((m, i) => { MT_MATCH_INDEX[m.id] = i; });
 const MT_M11 = MT_MATCH_INDEX['M11'], MT_M13 = MT_MATCH_INDEX['M13'], MT_M12 = MT_MATCH_INDEX['M12'];
 const MT_NUM_MATCHES = MT_BRACKET_MATCHES.length;
-function mainThreadBracketEV(meanArr, varArr) {
+function mainThreadBracketEV(meanArr, varArr, numAlliances) {
   const redOf = new Int8Array(MT_NUM_MATCHES), blueOf = new Int8Array(MT_NUM_MATCHES), winnerOf = new Int8Array(MT_NUM_MATCHES);
   const value = new Array(8).fill(0);
+  function isReal(seed) { return seed < numAlliances; }
   function resolve(ref) {
     if (ref.t === 'seed') return ref.s;
     const idx = MT_MATCH_INDEX[ref.m];
@@ -769,19 +873,30 @@ function mainThreadBracketEV(meanArr, varArr) {
     if (pos === MT_NUM_MATCHES) {
       const loserM12 = winnerOf[MT_M12] === redOf[MT_M12] ? blueOf[MT_M12] : redOf[MT_M12];
       const loserM13 = winnerOf[MT_M13] === redOf[MT_M13] ? blueOf[MT_M13] : redOf[MT_M13];
-      value[loserM12] += prob * 7;
-      value[loserM13] += prob * 13;
+      if (isReal(loserM12)) value[loserM12] += prob * 7;
+      if (isReal(loserM13)) value[loserM13] += prob * 13;
       const m11w = winnerOf[MT_M11], m13w = winnerOf[MT_M13];
-      const p = mainThreadWinProb(meanArr[m11w], varArr[m11w], meanArr[m13w], varArr[m13w]);
-      const pSweepM11 = p * p, p3M11 = 2 * p * p * (1 - p);
-      const pSweepM13 = (1 - p) * (1 - p), p3M13 = 2 * (1 - p) * (1 - p) * p;
-      value[m11w] += prob * ((pSweepM11 + p3M11) * 30 + pSweepM13 * 20 + p3M13 * 25);
-      value[m13w] += prob * ((pSweepM13 + p3M13) * 30 + pSweepM11 * 20 + p3M11 * 25);
+      const m11Real = isReal(m11w), m13Real = isReal(m13w);
+      if (m11Real && m13Real) {
+        const p = mainThreadWinProb(meanArr[m11w], varArr[m11w], meanArr[m13w], varArr[m13w]);
+        const pSweepM11 = p * p, p3M11 = 2 * p * p * (1 - p);
+        const pSweepM13 = (1 - p) * (1 - p), p3M13 = 2 * (1 - p) * (1 - p) * p;
+        value[m11w] += prob * ((pSweepM11 + p3M11) * 30 + pSweepM13 * 20 + p3M13 * 25);
+        value[m13w] += prob * ((pSweepM13 + p3M13) * 30 + pSweepM11 * 20 + p3M11 * 25);
+      } else if (m11Real) {
+        value[m11w] += prob * 30;
+      } else if (m13Real) {
+        value[m13w] += prob * 30;
+      }
       return;
     }
     const match = MT_BRACKET_MATCHES[pos];
     const red = resolve(match.red), blue = resolve(match.blue);
     redOf[pos] = red; blueOf[pos] = blue;
+    const redReal = isReal(red), blueReal = isReal(blue);
+    if (redReal && !blueReal) { winnerOf[pos] = red; recurse(pos + 1, prob); return; }
+    if (!redReal && blueReal) { winnerOf[pos] = blue; recurse(pos + 1, prob); return; }
+    if (!redReal && !blueReal) { winnerOf[pos] = red; recurse(pos + 1, prob); return; }
     const pRed = mainThreadWinProb(meanArr[red], varArr[red], meanArr[blue], varArr[blue]);
     winnerOf[pos] = red;  recurse(pos + 1, prob * pRed);
     winnerOf[pos] = blue; recurse(pos + 1, prob * (1 - pRed));
@@ -794,7 +909,7 @@ function mainThreadBracketEV(meanArr, varArr) {
 // up front (no worker needed) whether declining is guaranteed to forfeit any
 // shot at captaincy, so we can skip spinning up a whole tree search for it.
 function mtComputeDeclineTrivial(rosters, teamId, rankOrder) {
-  const C = 8 - rosters.length;
+  const C = wt.numAlliances - rosters.length;
   if (C === 0) return true;
   const rostered = new Set(rosters.flat());
   const myRankIdx = rankOrder.findIndex(t => t.id === teamId);
@@ -818,7 +933,7 @@ function mtEvaluateLeaf(rosters, teamsList) {
     for (const tid of rosters[i]) { const t = teamById.get(tid); m += t.mean; v += t.variance; }
     meanArr[i] = m; varArr[i] = v;
   }
-  const allianceVals = mainThreadBracketEV(meanArr, varArr);
+  const allianceVals = mainThreadBracketEV(meanArr, varArr, wt.numAlliances);
   const vec = {};
   for (let i = 0; i < rosters.length; i++) {
     const allianceNumber = i + 1, capFirstPts = 17 - allianceNumber, secondPts = allianceNumber;
@@ -1065,12 +1180,20 @@ function getWorkerBlobUrl() {
 // ============================================================
 const TEAMS_PER_ALLIANCE_WT = 3;
 
-function wtIsComplete(rosters) { return rosters.length === 8 && rosters.every(r => r.length === TEAMS_PER_ALLIANCE_WT); }
+// numAlliances: FRC forms floor((teamCount-1)/3) alliances (capped at 8) when
+// an event has fewer than 25 teams - e.g. 24 teams -> 7 alliances, 20 teams
+// -> 6 alliances - while the playoff bracket shape itself never changes
+// (non-existent alliances just get byes, handled in mainThreadBracketEV /
+// bracketEV). This is computed once per team pool and stored on wt.
+function computeNumAlliances(teamsList) { return Math.max(1, Math.min(8, Math.floor((teamsList.length - 1) / 3))); }
+
+function wtIsComplete(rosters) { return rosters.length === wt.numAlliances && rosters.every(r => r.length === TEAMS_PER_ALLIANCE_WT); }
 function wtGetActiveAllianceIdx(rosters) {
+  const n = wt.numAlliances;
   const k = rosters.length;
-  if (k < 8) return k - 1;
-  if (rosters[7].length < 2) return 7;
-  for (let i = 7; i >= 0; i--) if (rosters[i].length < TEAMS_PER_ALLIANCE_WT) return i;
+  if (k < n) return k - 1;
+  if (rosters[n - 1].length < 2) return n - 1;
+  for (let i = n - 1; i >= 0; i--) if (rosters[i].length < TEAMS_PER_ALLIANCE_WT) return i;
   return -1;
 }
 function wtGetAvailable(rosters, blacklist) {
@@ -1088,7 +1211,7 @@ function wtNextCaptainCandidate(rosters, rankOrder) {
 function wtApplyAccept(rosters, allianceIdx, teamId, rankOrder) {
   const wasFirstPick = rosters[allianceIdx].length === 1;
   const newRosters = rosters.map((r, i) => i === allianceIdx ? [...r, teamId] : r);
-  if (wasFirstPick && newRosters.length < 8) {
+  if (wasFirstPick && newRosters.length < wt.numAlliances) {
     const nextCap = wtNextCaptainCandidate(newRosters, rankOrder);
     if (nextCap) newRosters.push([nextCap.id]);
   }
@@ -1103,6 +1226,7 @@ function initWalkthroughFromData(teamsData, myTeamId) {
   wt = {
     rosters: [[rankOrder[0].id]], blacklist: new Set(), pendingOffer: null,
     myTeamId, rankOrder, history: [], activeWorkers: [], snapshots: [],
+    numAlliances: computeNumAlliances(teams),
   };
   document.getElementById('wtWhoAmI').textContent = myTeamId === '__ANY__' ? 'Viewing every team\u2019s perspective' : `You are ${myTeamId}`;
   renderWalkthrough();
@@ -1130,12 +1254,12 @@ function renderRosterBoard() {
   if (complete) {
     const teamById = new Map(teams.map(t => [t.id, t]));
     const meanArr = new Array(8).fill(0), varArr = new Array(8).fill(0);
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < wt.rosters.length; i++) {
       let m = 0, v = 0;
       for (const tid of wt.rosters[i]) { const t = teamById.get(tid); m += t.mean; v += t.variance; }
       meanArr[i] = m; varArr[i] = v;
     }
-    playoffOnly = mainThreadBracketEV(meanArr, varArr);
+    playoffOnly = mainThreadBracketEV(meanArr, varArr, wt.numAlliances);
     // 'auto auto' (not '1fr auto'): both columns size to their own content,
     // so the EV column sits right after the widest alliance label instead of
     // being stretched to the panel's far edge - EVs still align vertically
@@ -1148,9 +1272,10 @@ function renderRosterBoard() {
     board.style.columnGap = '14px';
     board.style.justifyContent = 'start';
   } else {
+    const rowCount = Math.ceil(wt.numAlliances / 2);
     board.style.gridTemplateColumns = 'repeat(2, 1fr)';
-    board.style.gridTemplateRows = 'repeat(4, auto)';
-    board.style.gridAutoFlow = 'column'; // fills column-major: alliances 1-4 in col 1, 5-8 in col 2
+    board.style.gridTemplateRows = `repeat(${rowCount}, auto)`;
+    board.style.gridAutoFlow = 'column'; // fills column-major: first-half alliances in col 1, rest in col 2
     board.style.alignItems = '';
     board.style.rowGap = '';
   }
@@ -1204,7 +1329,7 @@ function wtRunSolver(rosters, blacklist, pendingOffer, forTeamId, onUpdate) {
   };
   worker.postMessage({
     teams, rosters, blacklist: Array.from(blacklist), pendingOffer,
-    myTeamId: forTeamId,
+    myTeamId: forTeamId, numAlliances: wt.numAlliances,
   });
   return worker;
 }
@@ -1256,15 +1381,15 @@ function renderWalkthrough() {
   if (wt.pendingOffer) {
     const { allianceIdx, teamId } = wt.pendingOffer;
     const isMine = wt.myTeamId === '__ANY__' || teamId === wt.myTeamId;
-    const captainSlotsRemaining = 8 - wt.rosters.length;
+    const captainSlotsRemaining = wt.numAlliances - wt.rosters.length;
     const declineLegal = captainSlotsRemaining > 0; // model's own assumption - user can still override below
 
     if (!isMine) {
       panel.innerHTML = `
-        <div class="decision-header">Does <b>${teamId}</b> accept the offer from alliance #${allianceIdx + 1}?</div>
+        <div class="decision-header"><b>${teamId}</b>: Accept or Decline?</div>
         <div class="btn-row">
-          <button id="wtAccept" class="primary">Accept</button>
-          <button id="wtDecline">Decline</button>
+          <button id="wtAccept" class="primary choice-btn">Accept</button>
+          <button id="wtDecline" class="choice-btn">Decline</button>
         </div>`;
       document.getElementById('wtAccept').onclick = () => {
         wtCommit(`${teamId} accepted alliance #${allianceIdx + 1}'s offer.`, wtApplyAccept(wt.rosters, allianceIdx, teamId, wt.rankOrder), wt.blacklist, null);
@@ -1296,10 +1421,7 @@ function renderWalkthrough() {
               <span class="cb-ev">${declineState.ev != null ? declineState.ev.toFixed(3) : '…'}</span>
               <div class="cb-status">Decline (${statusText(declineState)})</div>
             </button>
-          </div>
-          <button id="wtForceRefresh1" style="width:100%;margin-top:6px;">Refresh</button>`;
-        const refreshBtn = document.getElementById('wtForceRefresh1');
-        if (refreshBtn) refreshBtn.onclick = () => { if (wt.repainter) wt.repainter.flushNow(); };
+          </div>`;
       }
       wrap.onclick = (e) => {
         const btn = e.target.closest('[data-choice]');
@@ -1365,13 +1487,14 @@ function renderWalkthrough() {
 
   if (!isMine) {
     panel.innerHTML = `
-      <div class="decision-header">Who does alliance #${capIdx + 1} (captain ${capTeamId}) choose?</div>
+      <div class="decision-header">Alliance #${capIdx + 1} Captain (${capTeamId}):</div>
       <div class="btn-row" id="wtOfferChoices"></div>
       ${manualPickerHtml('wtManualOffer')}`;
     const row = document.getElementById('wtOfferChoices');
     candidates.forEach(c => {
       const btn = document.createElement('button');
       btn.textContent = `${c.id} (mean ${c.mean})`;
+      btn.className = 'choice-btn';
       btn.onclick = () => {
         wtCommit(`Alliance #${capIdx + 1} (${capTeamId}) offered ${c.id}.`, wt.rosters, wt.blacklist, { allianceIdx: capIdx, teamId: c.id });
       };
@@ -1383,8 +1506,8 @@ function renderWalkthrough() {
     };
   } else {
     const headerText = wt.myTeamId === '__ANY__'
-      ? `Alliance #${capIdx + 1} captain (${capTeamId}):`
-      : `Your call as alliance #${capIdx + 1} captain: who do you offer?`;
+      ? `Alliance #${capIdx + 1} Captain (${capTeamId}):`
+      : `Alliance #${capIdx + 1} Captain (${capTeamId}):`;
     panel.innerHTML = `<div class="decision-header">${headerText}</div><div id="wtOfferRecommendWrap"></div>${manualPickerHtml('wtManualOfferMine')}`;
     const wrap = document.getElementById('wtOfferRecommendWrap');
     const candStates = candidates.map(c => ({ id: c.id, mean: c.mean, ev: null, status: '', reason: null }));
@@ -1415,10 +1538,7 @@ function renderWalkthrough() {
               </div>
             </div>
           </button>
-        </div>`).join('') +
-        `<button id="wtForceRefresh2" style="width:100%;margin-top:6px;">Refresh</button>`;
-      const refreshBtn = document.getElementById('wtForceRefresh2');
-      if (refreshBtn) refreshBtn.onclick = () => { if (wt.repainter) wt.repainter.flushNow(); };
+        </div>`).join('');
     }
     // Event delegation on the stable wrap: since repaints are now throttled
     // (not fired on every solver tick), the card's geometry stays fixed for
@@ -1473,6 +1593,13 @@ document.getElementById('btnStartWalkthrough').onclick = async () => {
   const apiKey = document.getElementById('tbaKey').value.trim();
   const eventKey = document.getElementById('tbaEvent').value.trim();
   const startBtn = document.getElementById('btnStartWalkthrough');
+  // Capture the user's choice BEFORE any re-import, since a successful
+  // import rebuilds the <select> from scratch (populateTeamSelect), which
+  // resets it back to its first option ("__ANY__") - silently discarding
+  // whatever the user had picked, even though they never touched the
+  // dropdown again. Re-import happens on every Start click because the TBA
+  // key/event fields are pre-filled, not just the first time.
+  const myTeamIdBeforeImport = document.getElementById('wtTeamSelect').value;
   if (apiKey && eventKey) {
     startBtn.disabled = true;
     startBtn.textContent = 'Importing…';
@@ -1480,10 +1607,14 @@ document.getElementById('btnStartWalkthrough').onclick = async () => {
     startBtn.disabled = false;
     startBtn.textContent = 'Start walkthrough \u2192';
   }
-  // Read the selection AFTER any re-import, since a successful import replaces
-  // team IDs entirely (real TBA numbers vs. randomized ones) - a choice made
-  // before import could point at a team that no longer exists.
-  const myTeamId = document.getElementById('wtTeamSelect').value;
+  // If the previously-selected team still exists after the (re)import (the
+  // common case: same event, same teams come back), restore that exact
+  // selection. Only if it genuinely no longer exists (team IDs actually
+  // changed - e.g. first-ever import replacing placeholder T1/T2/... with
+  // real TBA numbers) do we fall back to whatever the reset dropdown shows.
+  const sel = document.getElementById('wtTeamSelect');
+  const stillExists = Array.from(sel.options).some(o => o.value === myTeamIdBeforeImport);
+  const myTeamId = stillExists ? myTeamIdBeforeImport : sel.value;
   document.getElementById('setupPanels').style.display = 'none';
   document.getElementById('walkthroughPanel').style.display = 'block';
   document.getElementById('topSubtitle').textContent = '';
