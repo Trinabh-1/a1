@@ -134,14 +134,14 @@
 </head>
 <body>
 
-<h1>Alliance <span>Engine v3.2</span></h1>
+<h1>Alliance <span>Engine v3.3</span></h1>
 <div class="subtitle" id="topSubtitle"></div>
 
 <div id="setupPanels">
 <div class="panel">
   <div class="panel-title">Import from TBA</div>
   <input id="tbaKey" type="password" placeholder="TBA Read API key" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;">
-  <input id="tbaEvent" type="text" value="2026cthar" placeholder="Event key" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;">
+  <input id="tbaEvent" type="text" value="2026cancmp" placeholder="Event key" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 8px;font-family:var(--mono);font-size:13px;margin-bottom:8px;min-height:44px;">
   <button id="btnImportTBA" class="primary" style="width:100%;">Import Qualification Results</button>
   <div class="hint" id="tbaStatus"></div>
 </div>
@@ -276,7 +276,7 @@ const OFFER_BRANCH = 3;
 
 function buildSolver(teams, numAlliances) {
   const MEMO_CAP = 1; // recalibrated after real-device trial: phone crashed (OOM reload) around depth.width 10.4.5 with caps disabled; restored below the original 40000 with extra margin
-  const NODE_CAP = 1000000; // the search now stops immediately on hitting this cap - a smaller cap directly bounds the worst-case single-round cost too, since rounds get more expensive as the tree grows toward it
+  const NODE_CAP = 100000; // the search now stops immediately on hitting this cap - a smaller cap directly bounds the worst-case single-round cost too, since rounds get more expensive as the tree grows toward it
   teams = teams.slice();
   const byId = new Map(teams.map(t => [t.id, t]));
   const rankOrder = teams.slice().sort((a, b) => a.qualRank - b.qualRank); // captain order = qual rank, NOT mean power
@@ -1060,7 +1060,7 @@ async function importFromTBA() {
   const eventKey = document.getElementById('tbaEvent').value.trim();
   const statusEl = document.getElementById('tbaStatus');
   if (!apiKey) { statusEl.textContent = 'Enter your TBA Read API key first.'; return; }
-  if (!eventKey) { statusEl.textContent = 'Enter an event key (e.g. 2026cthar).'; return; }
+  if (!eventKey) { statusEl.textContent = 'Enter an event key (e.g. 2026cancmp).'; return; }
   statusEl.textContent = 'Fetching from TBA…';
   try {
     const headers = { 'X-TBA-Auth-Key': apiKey };
