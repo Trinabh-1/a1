@@ -134,7 +134,7 @@
 </head>
 <body>
 
-<h1>Alliance <span>Engine v2.3</span></h1>
+<h1>Alliance <span>Engine v2.4</span></h1>
 <div class="subtitle" id="topSubtitle"></div>
 
 <div id="setupPanels">
@@ -276,7 +276,7 @@ const OFFER_BRANCH = 3;
 
 function buildSolver(teams, numAlliances) {
   const MEMO_CAP = 1; // recalibrated after real-device trial: phone crashed (OOM reload) around depth.width 10.4.5 with caps disabled; restored below the original 40000 with extra margin
-  const NODE_CAP = 1000000; // reduced further this session: the ephemeral fallback's real per-node cost (Set copies, availability scans, not just branching) turned out much higher than expected, so a smaller frozen frontier is needed to keep post-freeze rounds fast on mobile
+  const NODE_CAP = 100000; // reduced further this session: the ephemeral fallback's real per-node cost (Set copies, availability scans, not just branching) turned out much higher than expected, so a smaller frozen frontier is needed to keep post-freeze rounds fast on mobile
   // Ephemeral search (used once frozen) is real branching with NO
   // memoization or reuse - its cost per call is roughly width^(2*plies)
   // (offer levels branch by width, acceptDecline levels branch by 2,
