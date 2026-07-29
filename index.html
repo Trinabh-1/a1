@@ -276,12 +276,37 @@ const OFFER_BRANCH = 3;
 
 function buildSolver(teams, numAlliances) {
   const MEMO_CAP = 30000; // recalibrated after real-device trial: phone crashed (OOM reload) around depth.width 10.4.5 with caps disabled; restored below the original 40000 with extra margin
-  const NODE_CAP = 100000; // recalibrated after real-device trial: restored below the original 150000 with extra margin, since the tree (not the leaf memo) is what grows unbounded and caused the crash
+  const NODE_CAP = 20000; // reduced further this session: the ephemeral fallback's real per-node cost (Set copies, availability scans, not just branching) turned out much higher than expected, so a smaller frozen frontier is needed to keep post-freeze rounds fast on mobile
+  // Ephemeral search (used once frozen) is real branching with NO
+  // memoization or reuse - its cost per call is roughly width^(2*plies)
+  // (offer levels branch by width, acceptDecline levels branch by 2,
+  // alternating). Without a hard ceiling on how many plies it's allowed to
+  // search, that cost grows without bound as the global search depth keeps
+  // climbing round after round - this (not the tree itself) is what
+  // crashed the phone at depth.width 11.4.0, since freezing only stopped
+  // the PERSISTENT tree from growing, not the per-call cost of refining
+  // each frozen frontier node. Keep this small - it only needs to beat the
+  // previous 1-ply greedy rollout, not replicate full-depth search.
+  const MAX_EPHEMERAL_DEPTH = 2;
   teams = teams.slice();
   const byId = new Map(teams.map(t => [t.id, t]));
   const rankOrder = teams.slice().sort((a, b) => a.qualRank - b.qualRank); // captain order = qual rank, NOT mean power
   const trueLeafMemo = new Map();
   const widthByLevel = new Map(); // depthFromRoot -> target branching width, default OFFER_BRANCH
+  // Per-level generation counters for frozen-mode staleness checks. A
+  // single GLOBAL counter (tried first) meant any widen event ANYWHERE
+  // invalidated EVERY frontier node's cached value at once, causing
+  // constant churn - EV never settled because something was always being
+  // recomputed somewhere. Scoping invalidation to only the levels within a
+  // node's own lookahead window (windowGenSum below) means a node stays
+  // stable once ITS relevant levels stop changing, even while widening
+  // continues elsewhere in the tree.
+  const widthGenByLevel = new Map();
+  function windowGenSum(depthFromRoot) {
+    let sum = 0;
+    for (let lvl = depthFromRoot; lvl <= depthFromRoot + MAX_EPHEMERAL_DEPTH; lvl++) sum += widthGenByLevel.get(lvl) || 0;
+    return sum;
+  }
 
   function rosterKey(r) { return r[0] + ':' + r.slice(1).slice().sort().join(','); }
   function fullSignature(rosters) { return rosters.map(rosterKey).join('|'); }
@@ -316,7 +341,28 @@ function buildSolver(teams, numAlliances) {
     return newRosters;
   }
 
-  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, inherited: 0, frozen: false, widenEvents: 0, ephemeralNodes: 0 };
+  // Once frozen, EVERY existing frontier node becomes eligible for its
+  // first full ephemeral upgrade in the SAME round (since the global
+  // search depth crosses their depthFromRoot roughly all at once) - doing
+  // the whole backlog synchronously in one round is exactly what produced
+  // 60+ second single rounds in testing. This caps how many full upgrades
+  // happen per round; the rest get a cheap 1-ply rollout fallback
+  // immediately (never leaving a node without SOME value) and their
+  // expensive upgrade waits for a future round - spreading the backlog out
+  // instead of doing it all at once.
+  const EPHEMERAL_BATCH_PER_ROUND = 100;
+  // Separate, guaranteed budget for widenRealNodeIfNeeded (catching up an
+  // already-real node's width toward its target). ensureDepth's traversal
+  // is post-order (children fully processed before their parent), so the
+  // numerous frontier-node ephemeral refreshes happen FIRST every round -
+  // sharing one counter meant they could consume the entire round's
+  // budget before ever reaching the specific real nodes the priority
+  // system (smallest-width-first) actually cares about, silently starving
+  // widening progress for potentially thousands of rounds even while
+  // background work kept happening elsewhere. A separate counter
+  // guarantees priority-directed widening always gets its own turn.
+  const WIDEN_NODE_BATCH_PER_ROUND = 100;
+  const stats = { realNodes: 0, rollouts: 0, leafMemoHits: 0, leafEvals: 0, inherited: 0, frozen: false, widenEvents: 0, ephemeralNodes: 0, ephemeralBatchUsed: 0, widenNodeBatchUsed: 0 };
 
   function evaluateLeaf(rosters) {
     const key = fullSignature(rosters);
@@ -366,6 +412,7 @@ function buildSolver(teams, numAlliances) {
       rosters, blacklist, pendingOffer, depthFromRoot: depthFromRoot || 0,
       kind: pendingOffer ? 'acceptDecline' : (isComplete(rosters) ? 'leaf' : 'offer'),
       children: null, value: null, isFrontier: false, childDepthBudget: 0, capTeamId: null,
+      ephemeralBudgetUsed: -1,
     };
   }
 
@@ -427,6 +474,34 @@ function buildSolver(teams, numAlliances) {
     node.value = bestVec;
   }
 
+  // Once frozen, a real offer node's persisted children array stops
+  // growing (that permanent growth was the actual memory leak) - but its
+  // answer can still improve as widthByLevel keeps increasing for its
+  // level: for each candidate beyond what's already in node.children, try
+  // it via a ONE-TIME throwaway ephemeral search, fold it into node.value
+  // if it beats the current best, and keep nothing about it afterward
+  // except its id (so we don't try the same candidate twice) - exactly
+  // the "compute a sibling, compare, discard" approach, just applied to
+  // widening instead of only to depth.
+  function widenRealNodeIfNeeded(node) {
+    if (node.widenExhausted) return;
+    const targetWidth = widthByLevel.get(node.depthFromRoot) || OFFER_BRANCH;
+    if (!node.ephemeralTriedIds) node.ephemeralTriedIds = new Set(node.children.filter(c => c).map(c => c.pendingOffer.teamId));
+    if (node.ephemeralTriedIds.size >= targetWidth) return;
+    if (stats.widenNodeBatchUsed >= WIDEN_NODE_BATCH_PER_ROUND) return; // defer to a future round
+    const avail = getAvailable(node.rosters, node.blacklist).filter(t => !node.ephemeralTriedIds.has(t.id));
+    if (avail.length === 0) { node.widenExhausted = true; return; }
+    const need = targetWidth - node.ephemeralTriedIds.size;
+    for (let i = 0; i < need && i < avail.length; i++) {
+      const cand = avail[i];
+      stats.widenNodeBatchUsed++;
+      const v = ephemeralValue(node.rosters, node.blacklist, { allianceIdx: getActiveAllianceIdx(node.rosters), teamId: cand.id }, MAX_EPHEMERAL_DEPTH, node.depthFromRoot + 1);
+      node.ephemeralTriedIds.add(cand.id);
+      if ((v[node.capTeamId] || 0) > (node.value[node.capTeamId] || 0)) node.value = v;
+      if (stats.widenNodeBatchUsed >= WIDEN_NODE_BATCH_PER_ROUND) break;
+    }
+  }
+
   function ensureDepth(node, depthBudget) {
     if (node.kind === 'leaf') {
       if (node.value === null) node.value = evaluateLeaf(node.rosters);
@@ -444,9 +519,40 @@ function buildSolver(teams, numAlliances) {
     const wasFrontier = node.isFrontier;
     if (node.children === null) {
       if (stats.frozen) {
+        // Once frozen, don't gate on depth alone forever - widening can
+        // still change this node's answer (more candidates become
+        // available at some level within its lookahead window), so the
+        // "already stable" check is scoped to only the levels THIS node's
+        // ephemeral search actually touches (windowGenSum), not any widen
+        // event anywhere in the whole tree.
+        const currentGen = windowGenSum(node.depthFromRoot);
+        if (node.value !== null && node.ephemeralGenSnapshot === currentGen) {
+          node.isFrontier = true;
+          return; // nothing relevant has changed since we last computed this
+        }
+        if (node.value === null) {
+          // Guarantee SOME value immediately via a cheap 1-ply rollout, so
+          // parent aggregation (mergeOfferNode etc.) never sees a null
+          // child - mirrors the plain depthBudget===0 fallback above. The
+          // expensive multi-ply upgrade below may still be rate-limited.
+          let startRosters = node.rosters;
+          if (node.kind === 'acceptDecline') startRosters = applyAccept(node.rosters, node.pendingOffer.allianceIdx, node.pendingOffer.teamId);
+          node.value = rollout(startRosters, node.blacklist);
+        }
+        if (stats.ephemeralBatchUsed >= EPHEMERAL_BATCH_PER_ROUND) {
+          node.isFrontier = true;
+          return; // this node's expensive upgrade waits for a future round
+        }
+        stats.ephemeralBatchUsed++;
         // Tree growth is capped - refine this frontier node's value with a
         // throwaway real-branching search instead of persisting more nodes.
-        node.value = ephemeralValue(node.rosters, node.blacklist, node.pendingOffer, depthBudget, node.depthFromRoot);
+        // Always compute at the FULL cap immediately (not
+        // Math.min(depthBudget, MAX_EPHEMERAL_DEPTH)) so a given
+        // computation reflects the CURRENT width settings right away -
+        // ephemeralValue reads widthByLevel live, so widening is
+        // automatically picked up here without any extra plumbing.
+        node.value = ephemeralValue(node.rosters, node.blacklist, node.pendingOffer, MAX_EPHEMERAL_DEPTH, node.depthFromRoot);
+        node.ephemeralGenSnapshot = currentGen;
         node.isFrontier = true;
         return;
       }
@@ -495,7 +601,10 @@ function buildSolver(teams, numAlliances) {
         for (const child of node.children) if (child) ensureDepth(child, depthBudget - 1);
       }
     }
-    if (node.kind === 'offer') mergeOfferNode(node);
+    if (node.kind === 'offer') {
+      mergeOfferNode(node);
+      if (stats.frozen) widenRealNodeIfNeeded(node);
+    }
     else {
       const [acceptChild, declineChild] = node.children;
       if (!declineChild) { node.value = acceptChild.value; }
@@ -524,8 +633,17 @@ function buildSolver(teams, numAlliances) {
   function collectRealOfferLevels(node, out) {
     out = out || new Map();
     if (!node || node.kind === 'leaf') return out;
-    if (node.kind === 'offer' && node.children !== null) {
-      const w = node.children.length;
+    if (node.kind === 'offer' && node.children !== null && !node.widenExhausted) {
+      // Once frozen, node.children stops growing (see widenRealNodeIfNeeded)
+      // - ephemeralTriedIds tracks the TRUE considered width instead.
+      // Nodes marked widenExhausted (genuinely nothing left to try, ever)
+      // are excluded here on purpose - counting them would let one
+      // permanently-limited node (its own roster/blacklist just leaves it
+      // few candidates) pin the WHOLE level as "smallest" forever, since
+      // its ceiling can never rise - that starves every node at the level
+      // that still has real room, since priority always targets the
+      // reported smallest.
+      const w = node.ephemeralTriedIds ? node.ephemeralTriedIds.size : node.children.length;
       const prev = out.get(node.depthFromRoot);
       if (prev === undefined || w < prev) out.set(node.depthFromRoot, w);
     }
@@ -541,6 +659,26 @@ function buildSolver(teams, numAlliances) {
     if (node.depthFromRoot === targetLevel) {
       if (node.kind === 'offer' && node.children !== null) {
         const newWidth = widthByLevel.get(targetLevel) || OFFER_BRANCH;
+        if (stats.frozen) {
+          // Don't grow this node's persisted children (that was the actual
+          // memory leak) - just record the new target, but only if there's
+          // genuinely at least one more available candidate to try; otherwise
+          // this node is already maxed out and counting it as progress would
+          // let the search spin forever, never detecting true exhaustion.
+          const consideredCount = node.ephemeralTriedIds ? node.ephemeralTriedIds.size : node.children.length;
+          if (consideredCount >= newWidth) return;
+          const alreadyTried = node.ephemeralTriedIds || new Set(node.children.filter(c => c).map(c => c.pendingOffer.teamId));
+          const hasMore = getAvailable(node.rosters, node.blacklist).some(t => !alreadyTried.has(t.id));
+          if (!hasMore) { node.widenExhausted = true; return; }
+          // widenRealNodeIfNeeded (called from ensureDepth) tries the
+          // additional candidates one at a time and discards each after
+          // comparing, next time this node is visited - already
+          // rate-limited via EPHEMERAL_BATCH_PER_ROUND.
+          widthByLevel.set(targetLevel, newWidth);
+          widthGenByLevel.set(targetLevel, (widthGenByLevel.get(targetLevel) || 0) + 1);
+          stats.widenEvents++;
+          return;
+        }
         if (node.children.length < newWidth) {
           const already = new Set(node.children.filter(c => c).map(c => c.pendingOffer.teamId));
           const avail = getAvailable(node.rosters, node.blacklist).filter(c => !already.has(c.id));
@@ -696,6 +834,8 @@ self.onmessage = function(e) {
 
   while (true) {
     const roundStart = Date.now();
+    solver.stats.ephemeralBatchUsed = 0; // fresh batch allowance each round - see EPHEMERAL_BATCH_PER_ROUND
+    solver.stats.widenNodeBatchUsed = 0; // separate fresh allowance for priority-directed widening - see WIDEN_NODE_BATCH_PER_ROUND
     let widenLevelThisRound = null;
     if (mode === 'deepen') {
       solver.ensureDepth(node, depth);
@@ -741,16 +881,18 @@ self.onmessage = function(e) {
       // Real convergence (frontierCount===0) no longer stops the search -
       // it just means there's nothing left to DEEPEN, but width can always
       // keep increasing, so treat it exactly like a plateau: start widening.
-      if (frontierCount === 0) depthIsFinal = true; // permanent - depth never moves again after this
-      if (frontierCount === 0 || plateaued()) {
+      if (frontierCount === 0 || solver.stats.frozen) depthIsFinal = true; // permanent - depth never moves again after this
+      if (frontierCount === 0 || solver.stats.frozen || plateaued()) {
         const levels = solver.collectRealOfferLevels(node);
         if (levels.size === 0) {
-          if (frontierCount === 0) {
-            // No offer-type node exists ANYWHERE in this tree, AND there's no
-            // remaining depth either - genuinely nothing left in either
-            // direction (the very-end-of-draft case: this query's root is
-            // already an accept/decline decision whose only path leads
-            // straight to a complete leaf). Stop for real.
+          if (frontierCount === 0 || solver.stats.frozen) {
+            // Genuinely nothing left in either direction: either the whole
+            // tree completed (frontierCount===0), or we're frozen and
+            // every existing real offer node has been marked exhausted
+            // (collectRealOfferLevels excludes those) - once frozen, no
+            // new real offer levels can ever appear either, so this is
+            // true completion, not a reason to keep bumping depth (which
+            // has no effect once frozen anyway).
             postDone('exhausted');
             return;
           }
@@ -787,7 +929,14 @@ self.onmessage = function(e) {
         // beyond what's been reached - resume deepening instead of
         // wrongly declaring total exhaustion.
         const sweepAddedNothing = solver.stats.widenEvents === widenEventsAtSweepStart;
-        if (sweepAddedNothing && frontierCount === 0) { postDone('exhausted'); return; }
+        // Once frozen, widening is permanently a no-op (see widenAtLevel),
+        // so a pass adding nothing tells us nothing further can improve -
+        // frontierCount alone can never confirm that here, since frozen
+        // ephemeral frontier nodes are permanently "frontier" by design and
+        // never resolve to 0. Without this, the search would spin forever
+        // doing rounds that accomplish nothing once ephemeral depth is
+        // capped and widening is frozen.
+        if (sweepAddedNothing && (frontierCount === 0 || solver.stats.frozen)) { postDone('exhausted'); return; }
         mode = 'deepen';
         if (!depthIsFinal) depth++; // only advance depth if the tree hasn't ALREADY hit its true bottom - a successful widen pass after that point explored more width, not more depth, so depth must not move
       }
